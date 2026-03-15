@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>永夜之境：宗師歸來 V0.4.4 (模組化確認版)</title>
+    <style>
+        :root { --bg: #0a0a0f; --panel: #161622; --gold: #ffd700; --cherry: #ffb7c5; --accent: #70a1ff; --quest: #55efc4; --danger: #ff4757; --gm: #00cec9; --mat: #e1b12c; --skill: #9b59b6; --passive: #f39c12; }
+        body { background: var(--bg); color: #e0e0e0; font-family: 'PingFang TC', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 0; margin: 0; overflow-x: hidden; }
+        .container { width: 95%; max-width: 900px; padding: 20px; }
+        .hidden { display: none !important; }
+
+        #slot-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20000; }
+        .slot-card { background: var(--panel); border: 2px solid #333; padding: 20px; width: 80%; max-width: 400px; border-radius: 12px; margin-bottom: 15px; cursor: pointer; text-align: center; position: relative; transition: 0.3s; }
+        .slot-card:hover { border-color: var(--cherry); transform: translateY(-5px); }
+        .btn-del-slot { position: absolute; right: 10px; top: 10px; background: #444; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; z-index: 10; }
+        .btn-del-slot:hover { background: var(--danger); }
+        
+        .header-ui { background: var(--panel); padding: 15px; border-radius: 12px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; border-bottom: 3px solid var(--cherry); margin-bottom: 15px; }
+        .stat-card { text-align: center; border-right: 1px solid #333; }
+        .stat-card:last-child { border: none; }
+        .val { display: block; font-size: 1.1em; font-weight: bold; color: var(--gold); }
+        
+        .view-content { background: var(--panel); padding: 20px; border-radius: 12px; min-height: 500px; border: 1px solid #333; position: relative; }
+        .battle-grid { display: grid; grid-template-columns: 1fr 50px 1fr; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .unit-box { text-align: center; background: #111; padding: 10px; border-radius: 10px; position: relative; border: 1px solid #333; }
+        
+        .bar-bg { background: #222; height: 16px; border-radius: 8px; margin: 5px 0; overflow: hidden; position: relative; border: 1px solid #000; }
+        .hp-fill { background: linear-gradient(to right, #ff4757, #ff7675); height: 100%; transition: 0.2s; position: absolute; top: 0; left: 0; }
+        .exp-fill { background: linear-gradient(to right, #55efc4, #00b894); height: 100%; transition: 0.2s; position: absolute; top: 0; left: 0; }
+        .zen-fill { background: linear-gradient(to right, #70a1ff, #1e90ff); height: 100%; transition: 0.2s; position: absolute; top: 0; left: 0; }
+        .bar-text { position: absolute; width: 100%; text-align: center; font-size: 11px; line-height: 16px; color: white; font-weight: bold; text-shadow: 1px 1px 2px black; z-index: 5; pointer-events: none; }
+
+        .prep-area { background: rgba(0,0,0,0.4); border: 1px solid #444; border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.9em; }
+        .prep-controls { display: flex; align-items: center; gap: 10px; }
+        
+        @keyframes pointGlow { 0% { color: var(--gold); text-shadow: 0 0 5px var(--gold); } 50% { color: #fff; text-shadow: 0 0 20px var(--gold), 0 0 30px var(--gold); transform: scale(1.1); } 100% { color: var(--gold); text-shadow: 0 0 5px var(--gold); } }
+        .glow-pts { animation: pointGlow 2s infinite ease-in-out; display: inline-block; }
+
+        .stat-alloc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px; margin-top: 10px; }
+        .stat-row { text-align: center; }
+        .stat-label { font-size: 0.8em; color: #aaa; margin-bottom: 5px; }
+        .stat-val { font-size: 1.2em; font-weight: bold; color: var(--gold); margin: 0 10px; display: inline-block; min-width: 25px; }
+        .preview-val { color: #2ecc71; font-size: 0.9em; margin-left: 2px; }
+        .btn-plus { width: 35px; height: 35px; border-radius: 50%; border: 1px solid var(--cherry); background: none; color: var(--cherry); cursor: pointer; font-weight: bold; margin-top: 5px; font-size: 1.2em; }
+        .btn-plus:disabled { border-color: #444; color: #444; cursor: not-allowed; opacity: 0.5; }
+
+        @keyframes floatUp { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-40px); opacity: 0; } }
+        .dmg-text { position: absolute; width: 100%; text-align: center; font-weight: bold; font-size: 1.3em; animation: floatUp 0.8s forwards; pointer-events: none; z-index: 100; text-shadow: 1px 1px 2px black; }
+
+        .btn-action { padding: 8px 15px; background: var(--cherry); border: none; border-radius: 5px; font-weight: bold; cursor: pointer; color: black; transition: 0.2s; }
+        .btn-action:disabled { background: #444 !important; color: #888 !important; cursor: not-allowed; opacity: 0.7; }
+        .btn-action:active { transform: scale(0.95); }
+        
+        .item-row { background: #222; padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--accent); margin-bottom: 8px; }
+        
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; z-index: 100000; }
+        .modal-content { background: #1c1c28; border: 2px solid var(--cherry); border-radius: 12px; padding: 30px; text-align: center; max-width: 450px; width: 90%; box-shadow: 0 0 20px rgba(255,183,197,0.2); }
+        .tab-btn { padding: 12px; background: #222; color: #888; border: none; cursor: pointer; flex: 1; font-weight: bold; transition: 0.3s; user-select: none; }
+        .tab-btn.active { background: var(--panel); color: var(--cherry); border-top: 2px solid var(--cherry); }
+        
+        select, input[type="number"], textarea { background: #000; color: var(--gold); border: 1px solid var(--cherry); padding: 5px; border-radius: 5px; cursor: pointer; outline: none; text-align: center; }
+        
+        #naming-stat-alloc { background: #111; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #333; }
+        .hint { font-size: 0.75em; color: #888; display: block; margin-top: 8px; line-height: 1.3; }
+        #revive-timer-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 10px; z-index: 200; padding: 10px; box-sizing: border-box; }
+        .death-tip { font-size: 0.8em; color: var(--gold); margin-top: 15px; line-height: 1.4; font-style: italic; background: rgba(0,0,0,0.4); padding: 8px; border-radius: 5px; }
+
+        .skill-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 15px; }
+        .skill-slot { background: #111; border: 1px dashed #444; border-radius: 6px; height: 35px; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 0.75em; color: #666; position: relative; overflow: hidden; user-select: none; transition: 0.2s; cursor: pointer; }
+        .skill-slot.active { border: 1px solid var(--skill); color: #fff; }
+        .skill-slot.passive { border: 1px solid var(--passive); color: #fff; }
+        .skill-slot.empty:hover { border-color: var(--quest); color: var(--quest); }
+        .skill-slot:hover.active { background: #222; transform: scale(1.02); }
+        .skill-cd-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(0,0,0,0.7); color: var(--gold); font-weight: bold; display: flex; align-items: center; justify-content: center; height: 100%; pointer-events: none; transition: height 0.1s linear; font-size:0.9em; }
+        .skill-setup-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,71,87,0.3); display: flex; align-items: center; justify-content: center; font-size: 1.5em; pointer-events: none; }
+
+        .log-inv-tabs { display: flex; gap: 5px; margin-top: 5px; border-bottom: 2px solid #333; }
+        .li-tab { flex:1; text-align:center; padding: 10px 2px; font-size: 0.9em; background: #111; color: #666; cursor: pointer; border-radius: 5px 5px 0 0; border: 1px solid transparent; border-bottom: none; margin-bottom: -2px; z-index: 10; font-weight: bold; }
+        .li-tab.active { background: #000; color: var(--gold); border-color: #333; }
+        .li-content-box { height: 220px; overflow-y: auto; background: #000; padding: 12px; border-radius: 0 5px 5px 5px; border: 1px solid #333; font-size: 14px; color: #888; }
+        
+        .inv-filter { display: flex; gap: 5px; margin-bottom: 12px; }
+        .f-btn { background: #222; border: none; color: #aaa; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
+        .f-btn.active { background: var(--accent); color: #000; font-weight: bold; }
+        .inv-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #111; border-radius: 5px; margin-bottom: 8px; border-left: 3px solid #555; }
+        .inv-row.rec { border-left-color: var(--quest); }
+        .inv-row.mat { border-left-color: var(--mat); }
+        .inv-row.oth { border-left-color: var(--cherry); }
+        
+        .bag-qty-input { background: #000; border: 1px solid #444; color: var(--gold); border-radius: 3px; padding: 4px; width: 45px; text-align: center; margin-left: 5px; box-sizing: border-box; }
+        .bag-check { accent-color: var(--gold); transform: scale(1.2); cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="game-modal" class="modal">
+    <div class="modal-content">
+        <h2 id="modal-title" style="color:var(--gold); margin-top:0;"></h2>
+        <div id="modal-body" style="margin: 20px 0; line-height: 1.6; color:#ddd; font-size:1.05em;"></div>
+        
+        <div id="naming-area" class="hidden">
+            <input type="text" id="player-name-input" placeholder="請輸入名號 (留白為無名者)" style="padding:10px; text-align:center; background:#000; color:white; border:1px solid var(--cherry); width:80%; font-size:1.1em; margin-bottom:10px;">
+            <div id="naming-stat-alloc">
+                <p style="color:var(--gold); margin:5px 0; font-weight:bold;">修行初載：分配初始 5 點能力</p>
+                <div class="stat-alloc-grid" style="padding:10px; margin-top:0; background:transparent;">
+                    <div class="stat-row">
+                        <span style="font-size:0.85em; color:white;">力量</span><br>
+                        <div><button class="btn-plus" onclick="allocInitStat('str', 1)">+</button><br><b id="init-str" class="stat-val">2</b></div>
+                    </div>
+                    <div class="stat-row">
+                        <span style="font-size:0.85em; color:white;">體質</span><br>
+                        <div><button class="btn-plus" onclick="allocInitStat('vit', 1)">+</button><br><b id="init-vit" class="stat-val">1</b></div>
+                    </div>
+                    <div class="stat-row">
+                        <span style="font-size:0.85em; color:white;">敏捷</span><br>
+                        <div><button class="btn-plus" onclick="allocInitStat('agi', 1)">+</button><br><b id="init-agi" class="stat-val">0</b></div>
+                    </div>
+                </div>
+                <p style="font-size:0.85em; color:var(--cherry); margin-bottom:5px;">剩餘點數：<span id="init-points" style="font-size:1.2em; font-weight:bold;">5</span></p>
+                <p id="init-error" style="color:var(--danger); font-size:0.8em; display:none; margin: 5px 0;">⚠️ 請分配完所有點數才能開始旅程！</p>
+                <button class="btn-action" style="font-size:0.8em; background:#444; color:white;" onclick="resetInitStats()">重填</button>
+            </div>
+        </div>
+
+        <div style="display:flex; justify-content:center; gap:10px; margin-top: 20px;">
+            <button class="btn-action" id="modal-cancel-btn" style="background:#444; color:white; display:none;">取消</button>
+            <button class="btn-action" id="modal-confirm-btn">確認</button>
+        </div>
+    </div>
+</div>
+
+<div id="slot-screen">
+    <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color:var(--cherry); margin-bottom: 5px;">⛩️ 永夜之境 ⛩️</h1>
+        <small style="color: #666; letter-spacing: 2px;">宗師歸來 V0.4.4 (模組化確認版)</small>
+    </div>
+    <div id="slots-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
+</div>
+
+<div id="main-game" class="container hidden">
+    <div class="header-ui">
+        <div class="stat-card">姓名<br><span class="val" id="p-name">-</span></div>
+        <div class="stat-card">等級<br><span class="val" id="p-lvl">1</span></div>
+        <div class="stat-card">流派<br><span class="val" id="p-path-text" style="color:var(--cherry); font-size: 0.9em;">無</span></div>
+        <div class="stat-card">力量<br><span class="val" id="p-str-val">0</span></div>
+        <div class="stat-card">體質<br><span class="val" id="p-vit-val">0</span></div>
+        <div class="stat-card">敏捷<br><span class="val" id="p-agi-val">0</span></div>
+    </div>
+
+    <div style="display:flex; margin-bottom: 15px; gap: 5px;">
+        <button id="t-battle" class="tab-btn active" onclick="switchView('battle')">⚔️ 荒野出征</button>
+        <button id="t-village" class="tab-btn" onclick="switchView('village')">🌸 結界之里</button>
+    </div>
+
+    <div id="view-battle" class="view-content">
+        <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
+            <div>
+                <span id="map-ui-area"><select id="map-selector" onchange="changeMap()"></select></span>
+                <div id="map-info" style="font-size:12px; color:#aaa; margin-top:4px; line-height:1.4;"></div>
+            </div>
+            <span style="color:var(--gold); font-size:1.1em;">金幣: <span id="p-gold">0</span> | <span id="kill-text">擊殺: <span id="kill-count">0</span>/10</span></span>
+        </div>
+
+        <div class="battle-grid">
+            <div class="unit-box" id="p-box">
+                <div id="revive-timer-overlay" class="hidden">
+                    <span style="color:var(--danger); font-weight:bold; font-size:1.2em;">💀 魂火熄滅 💀</span>
+                    <span id="revive-seconds" style="color:white; font-size:1.8em; margin-top:5px;">5</span>
+                    <div id="death-tip-box" class="death-tip"></div>
+                </div>
+                <strong style="color:var(--cherry); font-size:1.1em;" id="p-display-name">-</strong>
+                <div id="helper-info" style="font-size:12px; color:#fdcb6e; margin-top:3px; font-weight:bold;"></div>
+                
+                <div class="bar-bg" style="margin-top:8px;"><div id="p-hp-bar" class="hp-fill"></div><div class="bar-text" id="p-hp-text">0 / 0</div></div>
+                <div class="bar-bg"><div id="p-exp-bar" class="exp-fill"></div><div class="bar-text" id="p-exp-text">0 / 0</div></div>
+            </div>
+            <div style="text-align:center; color:#444; font-weight:bold; font-size:1.2em;">VS</div>
+            <div class="unit-box" id="m-box">
+                <strong id="m-name" style="color:#ff4757; font-size:1.1em;">-</strong>
+                <div class="bar-bg" style="margin-top:20px;">
+                    <div id="m-hp-bar" class="hp-fill"></div>
+                    <div class="bar-text" id="m-hp-text">0 / 0</div>
+                </div>
+                <div style="font-size: 12px; color:#888; margin-top:5px;" id="m-sub-info">Lv. <span id="m-lvl">1</span></div>
+            </div>
+        </div>
+
+        <div class="skill-bar" id="skill-slots-area">
+            <div class="skill-slot empty" id="slot-0" onclick="handleSlotClick(0)">空 <br><small>(點擊設定)</small></div>
+            <div class="skill-slot empty" id="slot-1" onclick="handleSlotClick(1)">空 <br><small>(點擊設定)</small></div>
+            <div class="skill-slot empty" id="slot-2" onclick="handleSlotClick(2)">空 <br><small>(點擊設定)</small></div>
+            <div class="skill-slot empty" id="slot-3" onclick="handleSlotClick(3)">空 <br><small>(點擊設定)</small></div>
+        </div>
+
+        <div class="prep-area">
+            <div class="prep-controls">
+                <select id="potion-select" onchange="player.selectedPotion = this.value; updateUI();" style="font-size:0.95em; padding:4px;"></select>
+                <span style="color:var(--quest); font-size:0.95em;">剩餘: <span id="potion-count" style="font-weight:bold;">0</span></span>
+                <button id="btn-manual-heal" class="btn-action" style="padding:6px 12px; font-size:0.95em; min-width:60px;" onclick="usePotion(true)">手動</button>
+            </div>
+            <div class="prep-controls">
+                <label style="color:#aaa; font-size:0.9em; cursor:pointer; display:flex; align-items:center; gap:3px;">
+                    <input type="checkbox" id="auto-heal-check" onchange="player.autoHealEnabled = this.checked;" style="transform:scale(1.2);"> 自動補血
+                </label>
+                <span style="font-size:0.9em; color:#aaa; margin-left: 5px;">HP &lt;</span>
+                <input type="number" id="auto-heal-input" value="1" min="1" max="100" style="width:45px; font-size:0.9em;" onchange="updateAutoHeal(this.value)"> 
+                <span style="color:#aaa;">%</span>
+            </div>
+        </div>
+
+        <div class="log-inv-tabs">
+            <div id="tab-log-btn" class="li-tab active" onclick="switchLogTab('log')">📜 日誌</div>
+            <div id="tab-inv-btn" class="li-tab" onclick="switchLogTab('inv')">🎒 行囊</div>
+            <div id="tab-skill-btn" class="li-tab" onclick="switchLogTab('skill')">🌀 秘技</div>
+            <div id="tab-helper-btn" class="li-tab" onclick="switchLogTab('helper')">⛩️ 夥伴</div>
+        </div>
+        <div id="log" class="li-content-box"></div>
+        
+        <div id="inv-area" class="li-content-box hidden">
+            <div class="inv-filter">
+                <button class="f-btn active" id="fb-all" onclick="setInvFilter('all')">全部</button>
+                <button class="f-btn" id="fb-rec" onclick="setInvFilter('rec')">補給品</button>
+                <button class="f-btn" id="fb-mat" onclick="setInvFilter('mat')">素材</button>
+            </div>
+            <div id="inv-list"></div>
+        </div>
+        
+        <div id="skill-area" class="li-content-box hidden" style="padding:10px;">
+            <div class="inv-filter" style="margin-bottom:10px;">
+                <button class="f-btn active" id="sb-all" onclick="setSkillFilter('all')">全部</button>
+                <button class="f-btn" id="sb-init" onclick="setSkillFilter('init')">基礎</button>
+                <button class="f-btn" id="sb-job" onclick="setSkillFilter('job')">流派</button>
+                <button class="f-btn" id="sb-secret" onclick="setSkillFilter('secret')">秘笈</button>
+            </div>
+            <div id="skill-list-content"></div>
+        </div>
+
+        <div id="helper-area" class="li-content-box hidden" style="padding:10px;"></div>
+
+        <div style="text-align:center; margin:15px 0 10px 0; display:flex; justify-content:center; align-items:center; gap:15px;">
+            <button id="btn-boss" onclick="manualBoss()" disabled class="btn-action" style="background:#ff4757; color:white; padding:8px 20px; font-size:1em;">⚔️ 挑戰 BOSS</button>
+            <label style="color:var(--danger); font-size: 0.95em; cursor: pointer; display:flex; align-items:center; gap:5px;">
+                <input type="checkbox" id="auto-boss-check" onchange="player.autoBoss = this.checked; updateUI();" style="transform:scale(1.2);"> 自動挑戰
+            </label>
+            <span style="color:#aaa; font-size:0.95em; border-left:1px solid #444; padding-left:15px;">🛡️ 御守: <span id="revive-count" style="color:var(--gold);">0</span></span>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 10px; margin-bottom: 5px; font-size: 0.95em; display: flex; justify-content: space-around; color: #aaa; border: 1px solid #333;">
+            <span title="物理傷害 (基礎+裝備+夥伴)">🗡️ <span id="det-atk" style="color:white">0</span></span>
+            <span title="攻擊間隔 (每點AGI增加頻率)">⚡ <span id="det-spd" style="color:white">0</span></span> 
+            <span title="減傷率 (體質+裝備)">🛡️ <span id="det-def" style="color:white">0</span></span> 
+            <span title="閃避機率 (AGI+裝備)">🍃 <span id="det-eva" style="color:white">0</span></span> 
+        </div>
+
+        <div class="stat-alloc-grid">
+            <div class="stat-row">
+                <div class="stat-label">力量(STR)</div>
+                <button class="btn-plus" onclick="previewStat('str')">+</button><br>
+                <span id="stat-str" class="stat-val">0</span><span id="pre-str" class="preview-val"></span>
+            </div>
+            <div class="stat-row">
+                <div class="stat-label">體質(VIT)</div>
+                <button class="btn-plus" onclick="previewStat('vit')">+</button><br>
+                <span id="stat-vit" class="stat-val">0</span><span id="pre-vit" class="preview-val"></span>
+            </div>
+            <div class="stat-row">
+                <div class="stat-label">敏捷(AGI)</div>
+                <button class="btn-plus" onclick="previewStat('agi')">+</button><br>
+                <span id="stat-agi" class="stat-val">0</span><span id="pre-agi" class="preview-val"></span>
+            </div>
+        </div>
+        
+        <div id="stat-hint" style="text-align:center; font-size:0.85em; color:var(--accent); margin-top:10px; height:1.2em; font-style:italic;"></div>
+
+        <div style="text-align:center; margin-top:10px;">
+            <span style="font-size:1em; color:var(--gold);">剩餘點數：<span id="stat-points" style="font-weight:bold; font-size:1.2em;">0</span></span><br>
+            <div id="alloc-btns" class="hidden" style="margin-top:10px; display:flex; justify-content:center; gap:10px;">
+                <button class="btn-action" style="background:#444; color:white; padding:6px 15px; font-size:0.95em;" onclick="cancelPreview()">取消預覽</button>
+                <button class="btn-action" style="background:var(--quest); color:black; padding:6px 15px; font-size:0.95em;" onclick="confirmStats()">確定配點</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-village" class="view-content hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="margin:0; color:var(--gold);">🌸 結界之里</h2>
+            <button id="btn-quick-battle" class="btn-action hidden" style="background:var(--accent);" onclick="switchView('battle')">⚔️ 返回戰鬥</button>
+        </div>
+        <div id="village-menu" style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('inn')"><h3 style="color:var(--accent); margin:5px 0;">🛌 旅籠屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">休息恢復體力</p></div>
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('shop')"><h3 style="color:var(--cherry); margin:5px 0;">🏮 萬屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">補給與道具</p></div>
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('izakaya')"><h3 style="color:#fdcb6e; margin:5px 0;">🍶 居酒屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">招募夥伴與打工</p></div>
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('smith')"><h3 style="color:var(--mat); margin:5px 0;">⚒️ 鍛冶屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">強化與變賣</p></div>
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('save')"><h3 style="color:var(--quest); margin:5px 0;">💾 紀錄點</h3><p style="margin:0; font-size:0.8em; color:#aaa;">存檔與引繼</p></div>
+            <div class="slot-card" style="width:auto; margin:0; border-color:#555;" onclick="logoutGame()"><h3 style="color:#888; margin:5px 0;">🌀 登出</h3><p style="margin:0; font-size:0.8em; color:#aaa;">自動存檔並離開</p></div>
+            <div class="slot-card hidden" id="card-gm" style="width:auto; margin:0; grid-column: span 2; border-color:var(--gm);" onclick="showSubView('gm')"><h3 style="color:var(--gm); margin:5px 0;">🛠️ 神明特權</h3><p style="margin:0; font-size:0.8em; color:#aaa;">控制台</p></div>
+        </div>
+        <div id="sub-view" class="hidden">
+            <button id="btn-back-village" class="btn-action" onclick="backToVillage()" style="background:#444; color:white; margin-bottom:15px; font-size:1em;">← 返回</button>
+            <div id="sub-content"></div>
+        </div>
+    </div>
+</div>
+
+<script src="db.js"></script>
+<script src="ui.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
