@@ -1,5 +1,5 @@
 /* ==========================================================================
-   📦 中央數據庫 (ITEM_DB, HELPER_DB, MOB_DB, maps, skillDB) - V0.7.2
+   📦 中央數據庫 (ITEM_DB, HELPER_DB, MOB_DB, maps, skillDB) - V0.7.3 (首領結算修復版)
    ========================================================================== */
 
 const EFFECT_MAP = {
@@ -40,7 +40,6 @@ const ITEM_DB = {
     'revive': { id: 'revive', cat: 'sp', name: '替身御札', tag: '免死一次', cost: 5, reqDonation: 20000, sellable: false, sellPrice: 0, shopAvailable: false, desc: '蘊含強大靈力的護身符。持有時自動生效，抵擋一次致命傷害。' }
 };
 
-// ✨ 夥伴資料庫新增 role 與 roleName 分類
 const HELPER_DB = {
     'h1': { id: 'h1', role: 'phy', roleName: '武術', name: '流浪浪人・伍丸', cost: 300, duration: 30, skillType: 'attack', skillVal: 15, skillCd: 6, passive: (p) => { return { atk: 3, def: 0, eva: 0 }; }, workBonus: { rate: 1.2, label: "護衛：工錢提升 20%" }, desc: '追求劍道的浪人。增加基礎攻擊 3 點，每 6 秒施放一次斬擊（15點真實傷害）。' },
     'h2': { id: 'h2', role: 'mag', roleName: '法術', name: '見習巫女・小葵', cost: 300, duration: 30, skillType: 'heal', skillVal: 40, skillCd: 8, passive: (p) => { return { atk: 0, def: 2, eva: 0 }; }, workBonus: { rate: 1.15, label: "人氣：小費提升 15%" }, desc: '里中神社的修行者。增加護甲 2 點，每 8 秒恢復 40 點生命值。' },
@@ -53,26 +52,27 @@ const MOB_DB = {
     'm_dummy': { name: '朽木樁', hp: 1, atk: 0, defVal: 0, dr: 0, eva: 0, agi: 0, exp: 0, gold: 0, drops: [] },
     'm_rabbit': { name: '野生長耳兔', hp: 35, atk: 2, defVal: 0, dr: 0.02, eva: 5, agi: 10, exp: 3, gold: 2, drops: [{id:'p1', chance:0.25}, {id:'m0', chance:0.05}] },
     'm_fox_cub': { name: '落單幼狐', hp: 40, atk: 3, defVal: 0, dr: 0.02, eva: 8, agi: 15, exp: 4, gold: 3, drops: [{id:'p1', chance:0.30}, {id:'m0', chance:0.05}] },
-    'b_wolf': { name: '飢餓的野狼', hp: 250, atk: 14, defVal: 5, dr: 0.10, eva: 10, agi: 30, isBoss: true, drops: [{id:'p5', chance:0.50}, {id:'mat_wolf', chance:1.0}] },
-    'r_gold_rabbit': { name: '✨ 貪婪金兔', hp: 120, atk: 5, defVal: 2, dr: 0.05, eva: 30, agi: 150, isBoss: false, drops: [{id:'p2', chance:1.0}, {id:'m0', chance:1.0}] },
+    // ✨ 修復：為所有首領補上豐厚的 exp 和 gold 屬性
+    'b_wolf': { name: '飢餓的野狼', hp: 250, atk: 14, defVal: 5, dr: 0.10, eva: 10, agi: 30, exp: 50, gold: 30, isBoss: true, drops: [{id:'p5', chance:0.50}, {id:'mat_wolf', chance:1.0}] },
+    'r_gold_rabbit': { name: '✨ 貪婪金兔', hp: 120, atk: 5, defVal: 2, dr: 0.05, eva: 30, agi: 150, exp: 20, gold: 50, isBoss: false, drops: [{id:'p2', chance:1.0}, {id:'m0', chance:1.0}] },
     'm_dog': { name: '迷途犬', hp: 60, atk: 5, defVal: 3, dr: 0.05, eva: 10, agi: 20, exp: 6, gold: 5, drops: [{id:'p1', chance:0.10}, {id:'m1', chance:0.15}] },
     'm_bamboo': { name: '竹林小鬼', hp: 75, atk: 7, defVal: 5, dr: 0.08, eva: 5, agi: 15, exp: 7, gold: 6, drops: [{id:'m1', chance:0.15}, {id:'m0', chance:0.10}] },
-    'b_lion': { name: '荒廢石獅子', hp: 500, atk: 22, defVal: 15, dr: 0.15, eva: 5, agi: 15, isBoss: true, drops: [{id:'p2', chance:0.80}, {id:'mat_lion', chance:1.0}] },
+    'b_lion': { name: '荒廢石獅子', hp: 500, atk: 22, defVal: 15, dr: 0.15, eva: 5, agi: 15, exp: 120, gold: 80, isBoss: true, drops: [{id:'p2', chance:0.80}, {id:'mat_lion', chance:1.0}] },
     'm_tengu': { name: '天狗', hp: 150, atk: 10, defVal: 10, dr: 0.10, eva: 20, agi: 45, exp: 15, gold: 15, drops: [{id:'p2', chance:0.10}, {id:'m2', chance:0.15}] },
     'm_yama': { name: '山童', hp: 180, atk: 13, defVal: 18, dr: 0.12, eva: 5, agi: 20, exp: 18, gold: 18, drops: [{id:'m2', chance:0.15}, {id:'m0', chance:0.10}] },
-    'b_spirit': { name: '怨念木靈', hp: 1200, atk: 30, defVal: 25, dr: 0.20, eva: 15, agi: 35, isBoss: true, drops: [{id:'p5', chance:0.50}, {id:'m2', chance:1.0}] },
+    'b_spirit': { name: '怨念木靈', hp: 1200, atk: 30, defVal: 25, dr: 0.20, eva: 15, agi: 35, exp: 350, gold: 200, isBoss: true, drops: [{id:'p5', chance:0.50}, {id:'m2', chance:1.0}] },
     'm_fox': { name: '白狐', hp: 350, atk: 18, defVal: 20, dr: 0.15, eva: 25, agi: 60, exp: 40, gold: 35, drops: [{id:'p5', chance:0.15}, {id:'m3', chance:0.15}] },
     'm_umbrella': { name: '紙傘怪', hp: 380, atk: 22, defVal: 25, dr: 0.18, eva: 15, agi: 40, exp: 45, gold: 40, drops: [{id:'m3', chance:0.15}, {id:'m0', chance:0.10}] },
-    'b_inari': { name: '邪染稻荷使', hp: 3000, atk: 45, defVal: 40, dr: 0.25, eva: 20, agi: 80, isBoss: true, drops: [{id:'p3', chance:0.20}, {id:'mat_fox', chance:1.0}] },
+    'b_inari': { name: '邪染稻荷使', hp: 3000, atk: 45, defVal: 40, dr: 0.25, eva: 20, agi: 80, exp: 800, gold: 450, isBoss: true, drops: [{id:'p3', chance:0.20}, {id:'mat_fox', chance:1.0}] },
     'm_thunder': { name: '雷精', hp: 900, atk: 30, defVal: 35, dr: 0.20, eva: 20, agi: 70, exp: 100, gold: 70, drops: [{id:'p3', chance:0.10}, {id:'m4', chance:0.15}] },
     'm_bird': { name: '雷震子', hp: 1000, atk: 35, defVal: 40, dr: 0.22, eva: 25, agi: 90, exp: 110, gold: 80, drops: [{id:'m4', chance:0.15}, {id:'m0', chance:0.10}] },
-    'b_tengu': { name: '蒼雷大天狗', hp: 8000, atk: 70, defVal: 60, dr: 0.30, eva: 30, agi: 120, isBoss: true, drops: [{id:'p6', chance:0.50}, {id:'mat_tengu', chance:1.0}] },
+    'b_tengu': { name: '蒼雷大天狗', hp: 8000, atk: 70, defVal: 60, dr: 0.30, eva: 30, agi: 120, exp: 2000, gold: 1000, isBoss: true, drops: [{id:'p6', chance:0.50}, {id:'mat_tengu', chance:1.0}] },
     'm_ghoul': { name: '飢餓的餓鬼', hp: 2500, atk: 65, defVal: 45, dr: 0.25, eva: 15, agi: 50, exp: 250, gold: 120, drops: [{id:'p3', chance:0.20}, {id:'m5', chance:0.15}] },
     'm_skel': { name: '遊蕩骸骨兵', hp: 2800, atk: 75, defVal: 55, dr: 0.28, eva: 10, agi: 40, exp: 280, gold: 140, drops: [{id:'m5', chance:0.20}, {id:'m0', chance:0.15}] },
-    'b_yomi': { name: '黃泉衛士', hp: 25000, atk: 120, defVal: 80, dr: 0.35, eva: 15, agi: 90, isBoss: true, drops: [{id:'p4', chance:0.60}, {id:'mat_yomi', chance:1.0}] },
+    'b_yomi': { name: '黃泉衛士', hp: 25000, atk: 120, defVal: 80, dr: 0.35, eva: 15, agi: 90, exp: 6000, gold: 3000, isBoss: true, drops: [{id:'p4', chance:0.60}, {id:'mat_yomi', chance:1.0}] },
     'm_hag': { name: '三途川奪衣婆', hp: 6500, atk: 90, defVal: 60, dr: 0.30, eva: 30, agi: 110, exp: 600, gold: 250, drops: [{id:'p6', chance:0.20}, {id:'m6', chance:0.15}] },
     'm_wheel': { name: '業火車', hp: 8000, atk: 110, defVal: 70, dr: 0.32, eva: 15, agi: 80, exp: 750, gold: 300, drops: [{id:'m6', chance:0.20}, {id:'m0', chance:0.20}] },
-    'b_sanzu': { name: '冥河擺渡人', hp: 60000, atk: 180, defVal: 100, dr: 0.40, eva: 25, agi: 150, isBoss: true, drops: [{id:'p4', chance:1.0}, {id:'m6', chance:1.0}] }
+    'b_sanzu': { name: '冥河擺渡人', hp: 60000, atk: 180, defVal: 100, dr: 0.40, eva: 25, agi: 150, exp: 15000, gold: 8000, isBoss: true, drops: [{id:'p4', chance:1.0}, {id:'m6', chance:1.0}] }
 };
 
 const maps = [

@@ -762,7 +762,7 @@ function updateUI() {
     
     if(el('auto-boss-check') && !el('repeat-boss-check')) {
         let lbl = document.createElement('label');
-        lbl.innerHTML = `<input type="checkbox" id="repeat-boss-check" onchange="player.repeatBoss = this.checked;" style="transform:scale(1.2);"> 重複刷王`;
+        lbl.innerHTML = `<input type="checkbox" id="repeat-boss-check" onchange="player.repeatBoss = this.checked;" style="transform:scale(1.2);"> 重複本關`;
         lbl.style.cssText = "color:var(--quest); font-size: 0.95em; cursor: pointer; display:flex; align-items:center; gap:5px; margin-left:10px;";
         if(player.repeatBoss) lbl.querySelector('input').checked = true;
         el('auto-boss-check').parentNode.parentNode.insertBefore(lbl, el('revive-count').parentNode);

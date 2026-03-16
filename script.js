@@ -160,7 +160,10 @@ function postLoadInit() {
             if (fakeKills > 0 && MOB_DB[mobId]) {
                 let expEarned = fakeKills * (MOB_DB[mobId].exp || 0);
                 let goldEarned = fakeKills * (MOB_DB[mobId].gold || 0);
-                player.exp += expEarned; player.gold += goldEarned; player.kills += fakeKills;
+                player.exp += expEarned; player.gold += goldEarned; 
+// ✨ 局部修復：離線掛機時擊殺數防溢出（道場不限，其餘地圖最多卡在10等著打王）
+if (player.mapIdx === 0) { player.kills += fakeKills; } 
+else { player.kills = Math.min(10, player.kills + fakeKills); }
                 
                 checkLevelUp(); 
                 updateUI();
@@ -185,8 +188,11 @@ document.addEventListener("visibilitychange", () => {
                 if (fakeKills > 0 && MOB_DB[mobId]) {
                     let expEarned = fakeKills * (MOB_DB[mobId].exp || 0);
                     let goldEarned = fakeKills * (MOB_DB[mobId].gold || 0);
-                    player.exp += expEarned; player.gold += goldEarned; player.kills += fakeKills;
-                    checkLevelUp(); updateUI();     
+                    player.exp += expEarned; player.gold += goldEarned; 
+// ✨ 局部修復：背景掛機時擊殺數防溢出
+if (player.mapIdx === 0) { player.kills += fakeKills; } 
+else { player.kills = Math.min(10, player.kills + fakeKills); }
+checkLevelUp(); updateUI();     
                     log(`🌙 【掛機結算】神遊了 ${formatHelperTime(elapsedSec)}。斬殺 ${fakeKills} 隻怪物，獲得 ${expEarned} 經驗, ${goldEarned} 金幣。`, "var(--gold)");
                     setTimeout(() => openModal("🌙 掛機結算", `妳離開了 ${formatHelperTime(elapsedSec)}<br><br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`, "領取"), 500);
                 }
@@ -550,14 +556,16 @@ function handleVictory() {
         if(dropMsgs.length === 0) dropMsgs.push("無特別物品");
         log(`🏆 擊敗首領！獲得 ${expGained} 經驗, ${goldGained} 金幣。<br>🎁 戰利品：${dropMsgs.join("，")}`, "var(--gold)");
         
+        // 判定是否通關並前往下一張地圖
         if (!player.repeatBoss && player.mapIdx < maps.length - 1) { 
             player.mapIdx++; player.maxMapIdx = Math.max(player.maxMapIdx, player.mapIdx); saveGame(false); 
             if(typeof showToast === 'function') showToast(`🗺️ 【領域擴張】已解鎖新地圖！`, "var(--quest)");
-            player.kills = 0; 
         } else {
-            if (player.repeatBoss) log(`⚔️ 循環挑戰開啟，繼續留在原地圖！`, "var(--accent)");
-            player.kills = 10; 
+            if (player.repeatBoss) log(`🔁 循環探索開啟，繼續留在原地圖！`, "var(--accent)");
         }
+        
+        // ✨ 核心修改 1：打完首領，擊殺數一律歸零，重新從第一隻小怪開始打！
+        player.kills = 0; 
         updateMapSelector();
     } else {
         if(dropMsgs.length > 0) log(`🎁 獲得：${dropMsgs.join(", ")}`, "var(--quest)");
@@ -566,7 +574,8 @@ function handleVictory() {
     
     checkLevelUp(); 
     
-    if (player.autoBoss && player.kills >= 10 && maps[player.mapIdx].boss) { 
+    // ✨ 核心修改 2：只要勾選了「重複本關」(repeatBoss) 或「自動挑戰」(autoBoss)，集滿10隻小怪就會強制自動打王！
+    if ((player.autoBoss || player.repeatBoss) && player.kills >= 10 && maps[player.mapIdx].boss) { 
         if(!monster.isBoss) log("⚔️ 擊殺達標，首領降臨！", "var(--danger)"); 
         spawn(true); 
     } else {
