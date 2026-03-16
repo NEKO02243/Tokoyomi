@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>永夜之境：宗師歸來 V0.4.4 (模組化確認版)</title>
+    <title>永夜之境  V0.7.0 (夥伴排班與武裝共鳴版)</title>
     <style>
         :root { --bg: #0a0a0f; --panel: #161622; --gold: #ffd700; --cherry: #ffb7c5; --accent: #70a1ff; --quest: #55efc4; --danger: #ff4757; --gm: #00cec9; --mat: #e1b12c; --skill: #9b59b6; --passive: #f39c12; }
         body { background: var(--bg); color: #e0e0e0; font-family: 'PingFang TC', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 0; margin: 0; overflow-x: hidden; }
@@ -86,6 +86,7 @@
         .inv-row.rec { border-left-color: var(--quest); }
         .inv-row.mat { border-left-color: var(--mat); }
         .inv-row.oth { border-left-color: var(--cherry); }
+        .inv-row.sp { border-left-color: var(--gold); } /* ✨ 新增：特殊道具金色邊框 */
         
         .bag-qty-input { background: #000; border: 1px solid #444; color: var(--gold); border-radius: 3px; padding: 4px; width: 45px; text-align: center; margin-left: 5px; box-sizing: border-box; }
         .bag-check { accent-color: var(--gold); transform: scale(1.2); cursor: pointer; }
@@ -132,7 +133,7 @@
 <div id="slot-screen">
     <div style="text-align: center; margin-bottom: 30px;">
         <h1 style="color:var(--cherry); margin-bottom: 5px;">⛩️ 永夜之境 ⛩️</h1>
-        <small style="color: #666; letter-spacing: 2px;">宗師歸來 V0.4.4 (模組化確認版)</small>
+        <small style="color: #666; letter-spacing: 2px;">永夜之境 V0.7.0 (夥伴排班與武裝共鳴版)</small>
     </div>
     <div id="slots-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
 </div>
@@ -221,6 +222,7 @@
                 <button class="f-btn active" id="fb-all" onclick="setInvFilter('all')">全部</button>
                 <button class="f-btn" id="fb-rec" onclick="setInvFilter('rec')">補給品</button>
                 <button class="f-btn" id="fb-mat" onclick="setInvFilter('mat')">素材</button>
+                <button class="f-btn" id="fb-sp" onclick="setInvFilter('sp')">特殊</button>
             </div>
             <div id="inv-list"></div>
         </div>
@@ -245,11 +247,12 @@
             <span style="color:#aaa; font-size:0.95em; border-left:1px solid #444; padding-left:15px;">🛡️ 御守: <span id="revive-count" style="color:var(--gold);">0</span></span>
         </div>
 
-        <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 10px; margin-bottom: 5px; font-size: 0.95em; display: flex; justify-content: space-around; color: #aaa; border: 1px solid #333;">
-            <span title="物理傷害 (基礎+裝備+夥伴)">🗡️ <span id="det-atk" style="color:white">0</span></span>
+        <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 10px; margin-bottom: 5px; font-size: 0.95em; display: flex; justify-content: space-around; color: #aaa; border: 1px solid #333; flex-wrap: wrap; gap: 5px;">
+            <span title="物理攻擊 (基礎+法器+夥伴)">🗡️ <span id="det-atk" style="color:white">0</span></span>
+            <span title="魔法攻擊 (體質轉換)">🔮 <span id="det-matk" style="color:var(--quest)">0</span></span>
             <span title="攻擊間隔 (每點AGI增加頻率)">⚡ <span id="det-spd" style="color:white">0</span></span> 
-            <span title="減傷率 (體質+裝備)">🛡️ <span id="det-def" style="color:white">0</span></span> 
-            <span title="閃避機率 (AGI+裝備)">🍃 <span id="det-eva" style="color:white">0</span></span> 
+            <span title="護甲防禦 (體質+法器)">🛡️ <span id="det-def" style="color:white">0</span></span> 
+            <span title="閃避機率 (AGI+法器)">🍃 <span id="det-eva" style="color:white">0</span></span> 
         </div>
 
         <div class="stat-alloc-grid">
@@ -290,7 +293,10 @@
             <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('inn')"><h3 style="color:var(--accent); margin:5px 0;">🛌 旅籠屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">休息恢復體力</p></div>
             <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('shop')"><h3 style="color:var(--cherry); margin:5px 0;">🏮 萬屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">補給與道具</p></div>
             <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('izakaya')"><h3 style="color:#fdcb6e; margin:5px 0;">🍶 居酒屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">招募夥伴與打工</p></div>
-            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('smith')"><h3 style="color:var(--mat); margin:5px 0;">⚒️ 鍛冶屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">強化與變賣</p></div>
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('smith')"><h3 style="color:var(--mat); margin:5px 0;">⚒️ 鍛冶屋</h3><p style="margin:0; font-size:0.8em; color:#aaa;">法器強化與變賣</p></div>
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('shrine')"><h3 style="color:var(--cherry); margin:5px 0;">⛩️ 神社</h3><p style="margin:0; font-size:0.8em; color:#aaa;">奉納與神賜潛力</p></div>
+            <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('sect')"><h3 style="color:var(--skill); margin:5px 0;">⚔️ 流派</h3><p style="margin:0; font-size:0.8em; color:#aaa;">宗門武學之路</p></div>
+            
             <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('save')"><h3 style="color:var(--quest); margin:5px 0;">💾 紀錄點</h3><p style="margin:0; font-size:0.8em; color:#aaa;">存檔與引繼</p></div>
             <div class="slot-card" style="width:auto; margin:0; border-color:#555;" onclick="logoutGame()"><h3 style="color:#888; margin:5px 0;">🌀 登出</h3><p style="margin:0; font-size:0.8em; color:#aaa;">自動存檔並離開</p></div>
             <div class="slot-card hidden" id="card-gm" style="width:auto; margin:0; grid-column: span 2; border-color:var(--gm);" onclick="showSubView('gm')"><h3 style="color:var(--gm); margin:5px 0;">🛠️ 神明特權</h3><p style="margin:0; font-size:0.8em; color:#aaa;">控制台</p></div>
