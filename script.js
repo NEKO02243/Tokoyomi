@@ -34,7 +34,8 @@ const defaultPlayer = {
     skillGambits: [0, 0, 0, 0], skillGambitValues: [50, 50, 50, 50], skillGambitOps: ['<', '<', '<', '<'],
     helperTimes: {}, 
     activeHelper: null, 
-    shrineDonation: 0, ascensionCount: 0
+    shrineDonation: 0, ascensionCount: 0,
+    maxOfflineMinutes: 60 // ✨ 新增：預設離線掛機上限為 60 分鐘
 };
 
 let player = JSON.parse(JSON.stringify(defaultPlayer));
@@ -152,23 +153,33 @@ function postLoadInit() {
     if(player.name === "御雷神命") { let gmCard = el('card-gm'); if(gmCard) gmCard.classList.remove('hidden'); }
     
     let offlineSec = Math.floor((Date.now() - player.lastSaveTime) / 1000);
+    // ✨ 實裝：計算離線時間上限
+    let maxOfflineSec = (player.maxOfflineMinutes || 60) * 60; 
+
     if (offlineSec > 60 && player.mapIdx > 0 && player.hp > 0 && !player.workStartTime) {
         let m = maps[player.mapIdx];
         if (m && m.mobs.length > 0) {
+            let actualOfflineSec = Math.min(offlineSec, maxOfflineSec); // 取實際時間與上限的較小值
+            let isCapped = offlineSec > maxOfflineSec; // 判斷是否爆掉
+
             let mobId = m.mobs[0]; 
-            let fakeKills = Math.floor(offlineSec / 10);
+            let fakeKills = Math.floor(actualOfflineSec / 10);
             if (fakeKills > 0 && MOB_DB[mobId]) {
                 let expEarned = fakeKills * (MOB_DB[mobId].exp || 0);
                 let goldEarned = fakeKills * (MOB_DB[mobId].gold || 0);
                 player.exp += expEarned; player.gold += goldEarned; 
-// ✨ 局部修復：離線掛機時擊殺數防溢出（道場不限，其餘地圖最多卡在10等著打王）
-if (player.mapIdx === 0) { player.kills += fakeKills; } 
-else { player.kills = Math.min(10, player.kills + fakeKills); }
+                
+                if (player.mapIdx === 0) { player.kills += fakeKills; } 
+                else { player.kills = Math.min(10, player.kills + fakeKills); }
                 
                 checkLevelUp(); 
                 updateUI();
                 
-                setTimeout(() => openModal("🌙 離線掛機結算", `妳離開了 ${formatHelperTime(offlineSec)}<br><br>斬殺約 ${fakeKills} 隻怪物。<br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`, "領取獎勵"), 1000);
+                // 動態生成提示訊息
+                let timeMsg = formatHelperTime(actualOfflineSec);
+                let warningHtml = isCapped ? `<br><span style="color:var(--danger); font-size:0.85em;">(已達掛機上限：${player.maxOfflineMinutes || 60} 分鐘。後續可透過道具擴充)</span>` : "";
+                
+                setTimeout(() => openModal("🌙 離線掛機結算", `妳離開了 ${formatHelperTime(offlineSec)}<br>系統自動為妳修練了 <b style="color:var(--quest);">${timeMsg}</b>${warningHtml}<br><br>斬殺約 ${fakeKills} 隻怪物。<br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`, "領取獎勵"), 1000);
             }
         }
     }
@@ -179,22 +190,37 @@ else { player.kills = Math.min(10, player.kills + fakeKills); }
 
 let lastActiveTime = Date.now();
 document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { lastActiveTime = Date.now(); } else {
+    if (document.hidden) { 
+        lastActiveTime = Date.now(); 
+    } else {
         let elapsedSec = Math.floor((Date.now() - lastActiveTime) / 1000);
+        let maxOfflineSec = (player.maxOfflineMinutes || 60) * 60; // ✨ 套用上限
+
         if (elapsedSec > 30 && currentView === 'battle' && !isPaused && !isReviving && player.hp > 0 && !player.workStartTime) {
+            let actualElapsedSec = Math.min(elapsedSec, maxOfflineSec);
+            let isCapped = elapsedSec > maxOfflineSec;
+
             let m = maps[player.mapIdx];
             if (m && m.mobs.length > 0 && player.mapIdx > 0) {
-                let mobId = m.mobs[0]; let fakeKills = Math.floor(elapsedSec / 8); 
+                let mobId = m.mobs[0]; 
+                let fakeKills = Math.floor(actualElapsedSec / 8); 
                 if (fakeKills > 0 && MOB_DB[mobId]) {
                     let expEarned = fakeKills * (MOB_DB[mobId].exp || 0);
                     let goldEarned = fakeKills * (MOB_DB[mobId].gold || 0);
                     player.exp += expEarned; player.gold += goldEarned; 
-// ✨ 局部修復：背景掛機時擊殺數防溢出
-if (player.mapIdx === 0) { player.kills += fakeKills; } 
-else { player.kills = Math.min(10, player.kills + fakeKills); }
-checkLevelUp(); updateUI();     
-                    log(`🌙 【掛機結算】神遊了 ${formatHelperTime(elapsedSec)}。斬殺 ${fakeKills} 隻怪物，獲得 ${expEarned} 經驗, ${goldEarned} 金幣。`, "var(--gold)");
-                    setTimeout(() => openModal("🌙 掛機結算", `妳離開了 ${formatHelperTime(elapsedSec)}<br><br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`, "領取"), 500);
+                    
+                    if (player.mapIdx === 0) { player.kills += fakeKills; } 
+                    else { player.kills = Math.min(10, player.kills + fakeKills); }
+                    
+                    checkLevelUp(); updateUI();     
+                    
+                    let timeMsg = formatHelperTime(actualElapsedSec);
+                    let popMsg = `妳神遊了 ${formatHelperTime(elapsedSec)}<br>系統結算了 <b style="color:var(--quest);">${timeMsg}</b> 的收益。`;
+                    if (isCapped) popMsg += `<br><span style="color:var(--danger); font-size:0.85em;">(已達掛機上限：${player.maxOfflineMinutes || 60} 分鐘)</span>`;
+                    popMsg += `<br><br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`;
+
+                    log(`🌙 【掛機結算】神遊了 ${formatHelperTime(elapsedSec)}，有效結算 ${timeMsg}。斬殺 ${fakeKills} 隻怪物，獲得 ${expEarned} 經驗, ${goldEarned} 金幣。`, "var(--gold)");
+                    setTimeout(() => openModal("🌙 掛機結算", popMsg, "領取"), 500);
                 }
             }
         }
@@ -597,11 +623,51 @@ function handleDeath() {
     }, 1000); 
 }
 
+// ✨ V0.7.5：實裝 Lv.200 等級硬上限與 100等後地獄級經驗曲線
 function checkLevelUp() { 
-    player.exp = Number(player.exp) || 0; player.next = Number(player.next) || 30;
-    while(player.exp >= player.next && player.next > 0) { 
-        player.lvl = (Number(player.lvl) || 1) + 1; player.exp -= player.next; player.next = Math.floor(player.next * (player.lvl < 20 ? 1.2 : 1.1)) + (player.lvl * 5); 
-        player.statPoints += 3; player.hp = getMaxHP(); log("🎉 境界提升！體力已恢復。", "var(--cherry)"); checkSkillUnlocks(); 
+    // 如果已經達到 200 等上限，經驗值鎖死滿管，不執行升級判定
+    if (player.lvl >= 200) {
+        player.exp = player.next;
+        return;
+    }
+
+    player.exp = Number(player.exp) || 0; 
+    player.next = Number(player.next) || 30;
+    
+    while (player.exp >= player.next && player.next > 0 && player.lvl < 200) { 
+        player.lvl = (Number(player.lvl) || 1) + 1; 
+        player.exp -= player.next; 
+        
+        // 📈 動態經驗曲線計算
+        let multi = 1.1;
+        let flatBonus = player.lvl * 5;
+        
+        if (player.lvl < 20) {
+            multi = 1.2;  // 【新手期】1~19等：快速過渡
+        } else if (player.lvl < 100) {
+            multi = 1.1;  // 【平穩期】20~99等：標準農怪節奏
+        } else if (player.lvl < 150) {
+            multi = 1.15; // 【困難期】100~149等：倍率提升，基數增加
+            flatBonus = player.lvl * 50;
+        } else {
+            multi = 1.25; // 【地獄期】150~199等：宗師苦練之路，經驗海量暴增
+            flatBonus = player.lvl * 200;
+        }
+        
+        player.next = Math.floor(player.next * multi) + flatBonus; 
+        player.statPoints += 3; 
+        player.hp = getMaxHP(); 
+        
+        log(`🎉 境界提升！目前等級：Lv.${player.lvl}，體力已恢復。`, "var(--cherry)"); 
+        checkSkillUnlocks(); 
+        
+        // 如果在連升數級的過程中剛好達到 200 級，強制中斷並鎖死經驗
+        if (player.lvl >= 200) {
+            player.lvl = 200;
+            player.exp = player.next;
+            log("👑 恭喜！您已達到凡人巔峰 (Lv.200)！等待轉生機緣...", "var(--gold)");
+            break;
+        }
     } 
     updateUI();
 }
