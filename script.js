@@ -16,6 +16,8 @@ function formatHelperTime(totalSeconds) {
 }
 
 const MAX_STAT_POINT = 650;
+const GEAR_MAX_LVL = 15;
+const UPGRADE_RATES = [100, 95, 85, 75, 60, 50, 40, 30, 25, 20, 15, 10, 8, 5, 3];
 let currentSlotKey = "";
 
 const defaultPlayer = {
@@ -121,6 +123,26 @@ function loadGame() {
 
             Object.assign(player, sd); 
             player.gameVersion = CURRENT_VERSION; player.lockedStats = { str: 2, vit: 1, agi: 0 }; 
+            
+            // ✨ 任務補償機制：如果裝備超過 15 等，發放補償並退回 15 等
+            let compensated = false;
+            let compGold = 0; let compStar = 0;
+            ['arms', 'body', 'legs'].forEach(g => {
+                if (player.gear[g] > 15) {
+                    let excess = player.gear[g] - 15;
+                    compGold += excess * 50000; // 每超過1級補償 5萬金幣
+                    compStar += excess * 5;     // 每超過1級補償 5顆星砂
+                    player.gear[g] = 15;
+                    compensated = true;
+                }
+            });
+            if (compensated) {
+                player.gold += compGold;
+                player.mats['wash_star'] = (player.mats['wash_star'] || 0) + compStar;
+                player.mats['mat_perfect'] = (player.mats['mat_perfect'] || 0) + 3; // 額外送3個「絕對真理(100%成功)」
+                setTimeout(() => openModal("⚖️ 天道校準補償", `偵測到您的法器曾突破了凡人極限。<br>因應天道法則，已將您的法器壓制回 <b>Lv.15</b>。<br><br><b>神明賜予了您豐厚的補償：</b><br>💰 金幣 +${compGold.toLocaleString()}<br>✨ 遺忘星砂 x${compStar}<br>🏆 絕對真理(100%成功) x3`, "感謝神明"), 1500);
+            }
+
             if(player.mapIdx >= maps.length) player.mapIdx = maps.length - 1; if(player.maxMapIdx >= maps.length) player.maxMapIdx = maps.length - 1;
             if(player.repeatBoss === undefined) player.repeatBoss = false;
         } catch(e) { player = JSON.parse(JSON.stringify(defaultPlayer)); saveGame(false); }
@@ -400,7 +422,7 @@ function getSpdVal() {
 function getEvaPercent() { 
     let base = player.agi * 0.1 + ((player.gear.legs || 0) * 1.0); 
     if (player.activeHelper && HELPER_DB[player.activeHelper]) { base += HELPER_DB[player.activeHelper].passive(player).eva || 0; } 
-    return base; 
+    return Math.min(70, base); // ✨ 強制最高不超過 70
 }
 function getMaxHP() { return Math.floor(player.vit * 10 + 50); }
 
@@ -426,14 +448,7 @@ function executeSkill(slotIdx) {
         if(isDummy) combatState.zenDmgAccum += finalDmg; else monster.hp -= finalDmg; 
         showDmg('m-box', finalDmg, sk.color); showDmg('p-box', "【蓄力】", sk.color); 
     }
-    else if(sid === 'agi_combo1') {
-        let d = Math.floor(getAtkVal() * 1.2);
-        if(isDummy) { finalDmg = d; } else { finalDmg = Math.max(0, (d - (monster.defVal || 0)/2)) * (1 - (monster.dr || 0)); }
-        finalDmg = Math.floor(finalDmg); if(isDummy) combatState.zenDmgAccum += finalDmg; else monster.hp -= finalDmg; 
-        if (!isDummy && Math.random() < 0.1) { monster.poisoned = 5.0; showDmg('m-box', "中毒", '#2ecc71'); }
-        showDmg('m-box', finalDmg, sk.color);
-    }
-    updateUI(); return true;
+   
 }
 
 let lastTickTime = Date.now();
@@ -474,13 +489,11 @@ function startBattleLoop() {
 
     if (!isDummy && monster.hp > 0 && monster.poisoned > 0) {
         monster.poisoned -= tickSec;
-        let maxPoison = getSpdVal() * 1.5; 
-        let poisonDmg = Math.floor(monster.mhp * 0.05 * tickSec); 
-        if (monster.isBoss) poisonDmg = Math.floor(poisonDmg / 2); 
-        if (poisonDmg > maxPoison) poisonDmg = maxPoison;
-        if (poisonDmg < 1) poisonDmg = 1;
+        // 基礎毒傷：完全看玩家的速度(敏捷)
+        let poisonDmg = Math.max(1, Math.floor(getSpdVal() * 1.5 * tickSec)); 
         monster.hp -= poisonDmg;
-        if (Math.random() < 0.2) showDmg('m-box', poisonDmg, '#2ecc71'); 
+        // 降低跳字頻率，避免畫面太亂
+        if (Math.random() < 0.2) showDmg('m-box', "毒 " + poisonDmg, '#2ecc71'); 
     }
 
     let baseAtk = getAtkVal(); let skillUsed = false;
@@ -499,10 +512,17 @@ function startBattleLoop() {
             finalDmg = Math.floor(finalDmg * (1 - (monster.dr || 0)));
             if (isCrit) finalDmg = Math.floor(finalDmg * 1.5);
             
+            // ✨ 猛毒刃觸發判定
+            if (hasPassive('agi_combo1') && Math.random() < 0.15) {
+                monster.poisoned = 4.0; // 刷新中毒時間為 4 秒
+                showDmg('m-box', "中毒", '#2ecc71'); 
+            }
+            
+            // ✨ 風刃觸發判定
             if (hasPassive('agi_combo2') && Math.random() < 0.20) {
-                let windDmg = Math.floor(getSpdVal() * 1.5);
-                finalDmg += windDmg;
-                log(`🌪️ 風刃發動！追加 ${windDmg} 點傷害。`, "var(--quest)");
+                let windDmg = Math.floor(baseAtk * 0.5 + getSpdVal() * 1.0);
+                finalDmg += windDmg; // 將風刃傷害直接揉合進本次普攻中，形成高爆發
+                // 為了避免畫面日誌洗頻，風刃作為基礎被動不再寫入 log，而是用數字變大來體現
             }
             
             if (finalDmg <= 0) { finalDmg = 0; if(Math.random() < 0.05) log(`[警告] 攻擊無法穿透敵方護甲，傷害為 0！`, "#888"); }
@@ -751,7 +771,7 @@ function applyBuff(effKey, duration) {
 }
 
 function ascendShrine(cost) {
-    if(player.gold < cost) return showToast("❌ 金幣不足以奉納上殿！", "var(--danger)");
+    if(player.gold < cost) return typeof showToast === 'function' ? showToast("❌ 金幣不足以奉納上殿！", "var(--danger)") : null;
     
     player.gold -= cost;
     player.ascensionCount = (player.ascensionCount || 0) + 1;
@@ -762,35 +782,35 @@ function ascendShrine(cost) {
 
     if (roll < 0.05) { 
         applyBuff('god_bless', 86400); 
-        title = "✨【神明降臨】";
-        msg = "天照之光籠罩大地！<br>獲得 24 小時 <b style='color:var(--gold)'>金幣與經驗大幅加成</b>！";
-        log("⛩️ 祈福觸發極稀有大獎：神明降臨！", "var(--gold)");
+        title = "✨【天照大御神 降臨】";
+        msg = "至高無上的太陽神之光籠罩大地！<br>獲得 24 小時 <b style='color:var(--gold)'>金幣與經驗大幅加成</b>！";
+        log("⛩️ 祈福觸發極稀有大獎：天照大御神降臨！", "var(--gold)");
     } 
     else if (roll < 0.45) { 
         if (Math.random() < 0.5) {
             applyBuff('atk_boost', 7200); 
-            title = "🦊【神使巡迴】";
-            msg = "稻荷神使在妳身邊徘徊。<br>獲得 2 小時 <b style='color:var(--danger)'>物理攻擊力提升</b>！";
+            title = "⚡【建御雷神 戰意】";
+            msg = "武神的力量湧入體內。<br>獲得 2 小時 <b style='color:var(--danger)'>物理攻擊力提升</b>！";
         } else {
             applyBuff('exp_boost', 7200);
-            title = "🦊【神使巡迴】";
-            msg = "文殊菩薩點化智慧。<br>獲得 2 小時 <b style='color:var(--quest)'>經驗值提升</b>！";
+            title = "🦊【宇迦之御魂神 豐收】";
+            msg = "稻荷神使賜予豐收之福。<br>獲得 2 小時 <b style='color:var(--quest)'>經驗值提升</b>！";
         }
-        log("⛩️ 祈福獲得增益：神使巡迴。", "var(--quest)");
+        log(`⛩️ 祈福獲得神明加護：${title}`, "var(--quest)");
     }
     else if (roll < 0.85) { 
         let getGold = 10000 + (player.lvl * 500);
         player.gold += getGold;
-        title = "🪙【凡心所向】";
-        msg = `神明聽到了妳的聲音，但目前正忙於他處。<br>賜予妳一點修行金：<b style='color:var(--gold)'>$${getGold.toLocaleString()}</b>`;
-        log("⛩️ 祈福效果普通：獲得修行金。", "#aaa");
+        title = "🪙【大國主命 賜福】";
+        msg = `建國之神聽到了妳的聲音，賜予妳修行金：<b style='color:var(--gold)'>$${getGold.toLocaleString()}</b>`;
+        log("⛩️ 祈福效果普通：獲得大國主命的修行金。", "#aaa");
     }
     else { 
-        for(let k in player.buffs) player.buffs[k] = 0; 
-        player.hp = Math.max(1, player.hp - 200);
-        title = "💀【厄神作祟】";
-        msg = "妳的舉止粗魯，驚擾了沉睡的荒神！<br><b style='color:var(--danger)'>所有增益消失，且體力大幅流失！</b>";
-        log("⛩️ 祈福大失敗：觸怒荒神！", "var(--danger)");
+        // ✨ 拔除清空 BUFF 邏輯，改為扣除當前血量 20%
+        player.hp = Math.max(1, Math.floor(player.hp * 0.8)); 
+        title = "🌑【禍津日神 厄運】";
+        msg = "妳驚擾了沉睡的災厄之神！<br><b style='color:var(--danger)'>體力受到反噬流失了 20%！</b><br><small style='color:#aaa;'>(增益效果未受影響)</small>";
+        log("⛩️ 祈福大失敗：禍津日神作祟！", "var(--danger)");
     }
 
     openModal(title, msg, "領受神意");
@@ -798,28 +818,109 @@ function ascendShrine(cost) {
     if(typeof renderShrine === 'function') renderShrine();
 }
 
-function getUpgradeCost(level) { let tier = Math.floor(level / 3) + 1; tier = Math.min(4, tier); let matKey = `m${tier}`; let goldCost = 50 + (level * 100); let ironCost = 5 + (level * 2); let specialCost = 1 + (level % 3); return { matKey, goldCost, ironCost, specialCost }; }
-function upgradeGear(gid) { let lv = player.gear[gid]; let req = getUpgradeCost(lv); if(player.gold >= req.goldCost && player.mats.m0 >= req.ironCost && player.mats[req.matKey] >= req.specialCost) { player.gold -= req.goldCost; player.mats.m0 -= req.ironCost; player.mats[req.matKey] -= req.specialCost; player.gear[gid]++; log(`⚒️ 靈脈法器強化成功！${gid} 提升至 Lv.${player.gear[gid]}`, "var(--mat)"); updateUI(); if(typeof renderSmithy === 'function') renderSmithy(); } }
+function getUpgradeCost(level) { 
+    let tier = Math.floor(level / 3) + 1; 
+    tier = Math.min(4, tier); 
+    let matKey = `m${tier}`; 
+    let goldCost = 50 + (level * 100); 
+    let ironCost = 5 + (level * 2); 
+    let specialCost = 1 + (level % 3); 
+    return { matKey, goldCost, ironCost, specialCost }; 
+}
 
+function upgradeGear(gid) { 
+    let lv = player.gear[gid] || 0; 
+    
+    if (lv >= 15) {
+        if(typeof showToast === 'function') showToast("此法器已達極限！", "var(--danger)");
+        return;
+    }
+
+    let req = getUpgradeCost(lv); 
+    let useHammer = document.getElementById('use-hammer') ? document.getElementById('use-hammer').checked : false;
+    let useShield = document.getElementById('use-shield') ? document.getElementById('use-shield').checked : false;
+
+    if (player.gold < req.goldCost || (player.mats.m0 || 0) < req.ironCost || (player.mats[req.matKey] || 0) < req.specialCost) { 
+        if(typeof showToast === 'function') showToast("❌ 強化素材或金幣不足！", "var(--danger)");
+        return;
+    }
+    if (useHammer && (player.mats.mat_hammer || 0) <= 0) {
+        if(typeof showToast === 'function') showToast("❌ 匠神之錘數量不足！", "var(--danger)");
+        return;
+    }
+    if (useShield && (player.mats.mat_shield || 0) <= 0) {
+        if(typeof showToast === 'function') showToast("❌ 守護符札數量不足！", "var(--danger)");
+        return;
+    }
+
+    player.gold -= req.goldCost; 
+    player.mats.m0 -= req.ironCost; 
+    player.mats[req.matKey] -= req.specialCost; 
+    
+    let rate = UPGRADE_RATES[lv] || 1;
+    if (useHammer) {
+        rate += 15; 
+        player.mats.mat_hammer--; 
+    }
+
+    let roll = Math.random() * 100;
+    if (roll <= rate) {
+        player.gear[gid]++; 
+        log(`⚒️ 【大成功】靈脈共鳴！${gid} 提升至 Lv.${player.gear[gid]}`, "lime"); 
+        if(typeof showToast === 'function') showToast(`✨ 強化成功！Lv.${player.gear[gid]}`, "lime");
+    } else {
+        if (useShield) {
+            player.mats.mat_shield--;
+            log(`🛡️ 強化失敗！但守護符札保住了法器能量。`, "var(--gold)");
+            if(typeof showToast === 'function') showToast("🛡️ 護符生效，法器未降級！", "var(--gold)");
+        } else {
+            let oldLv = player.gear[gid];
+            if (oldLv >= 6) {
+                player.gear[gid] = 0; 
+                log(`💥 強化失敗，靈脈崩塌！${gid} 等級歸零！`, "var(--danger)");
+                if(typeof showToast === 'function') showToast("💥 強化失敗，靈脈崩塌歸零！", "var(--danger)");
+            } else {
+                player.gear[gid] = Math.max(0, oldLv - 1); 
+                log(`💥 強化失敗！${gid} 降至 Lv.${player.gear[gid]}`, "var(--danger)");
+                if(typeof showToast === 'function') showToast("📉 強化失敗，法器降級", "var(--danger)");
+            }
+        }
+    }
+    
+    updateUI(); 
+    if(typeof renderSmithy === 'function') renderSmithy(); 
+}    
+    // 7. 更新介面與存檔
+    updateUI(); 
+    if(typeof renderSmithy === 'function') renderSmithy(); 
 function useWashStar(statType, qty) {
     qty = parseInt(qty);
     if(isNaN(qty) || qty <= 0) return;
-    if ((player.mats['wash_star'] || 0) < qty) return openModal("數量不足", "行囊中的遺忘星砂數量不足。", "了解");
-    if (player.allocatedStats[statType] < qty) return openModal("無法洗鍊", `您手動分配的 ${statType.toUpperCase()} 點數不足 ${qty} 點，無法洗退先天或系統強化點數！`, "了解");
+    if ((player.mats['wash_star'] || 0) < qty) return typeof showToast === 'function' ? showToast("行囊中的遺忘星砂數量不足。", "var(--danger)") : null;
     
-    player.mats['wash_star'] -= qty;
-    player[statType] -= qty;
-    player.allocatedStats[statType] -= qty;
-    player.statPoints += qty;
+    // ✨ 完美相容舊版：改用實際屬性減去初始屬性來判斷
+    let baseStats = { str: 2, vit: 1, agi: 0 };
+    let refundable = player[statType] - baseStats[statType];
     
-    player.hp = Math.min(player.hp, getMaxHP());
-    validateEquippedSkills();
-    updateUI();
-    log(`✨ 使用遺忘星砂 x${qty}，洗退了 ${qty} 點 ${statType.toUpperCase()}，獲得自由點數。`, "var(--quest)");
-    if(typeof renderBag === 'function') renderBag();
-}
-
-function buyShrineItem(id) {
+    if (refundable < qty) {
+        return openModal("無法洗鍊", `您目前的 ${statType.toUpperCase()} 點數扣除先天屬性後，不足 ${qty} 點可供洗退！<br><small style="color:#aaa;">(先天屬性受到天道保護，不可洗退)</small>`, "了解");
+    }
+    
+    // ✨ 雙重確認防呆機制 (true 代表顯示取消按鈕)
+    openModal("✨ 遺忘星砂", `確定要消耗 ${qty} 個星砂，洗退 ${qty} 點 ${statType.toUpperCase()} 嗎？`, "確定洗退", () => {
+        player.mats['wash_star'] -= qty;
+        player[statType] -= qty;
+        // 如果有紀錄手動點數，順便校準
+        if (player.allocatedStats) player.allocatedStats[statType] = Math.max(0, player.allocatedStats[statType] - qty);
+        player.statPoints += qty;
+        
+        player.hp = Math.min(player.hp, getMaxHP());
+        validateEquippedSkills();
+        updateUI();
+        log(`✨ 點數重塑：成功洗退了 ${qty} 點 ${statType.toUpperCase()}。`, "var(--quest)");
+        if(typeof renderBag === 'function') renderBag();
+    }, true);
+}function buyShrineItem(id) {
     let item = getItem(id);
     let cost = item.cost;
     if ((player.shrineDonation || 0) < item.reqDonation) return showToast("🔒 累積奉納不足，神明尚未認可您的虔誠。", "var(--danger)");
@@ -837,35 +938,56 @@ function buyShrineItem(id) {
 
 function useShrineBuffItem(id) {
     let item = getItem(id);
-    if ((player.mats[id] || 0) <= 0) return openModal("數量不足", "行囊中沒有該道具。", "了解");
+    if ((player.mats[id] || 0) <= 0) return typeof showToast === 'function' ? showToast("行囊中沒有該道具。", "var(--danger)") : null;
     
     player.mats[id]--;
 
     if (id === 's_omikuji') {
+        let n = 1; // ✨ 神社等級參數
         let roll = Math.random();
-        if (roll < 0.1) {
-            let getGold = player.lvl * 200; player.gold += getGold;
-            openModal("✨ 【大吉】", `神光庇護！獲得 ${getGold} 金幣！`, "收下");
-        } else if (roll < 0.4) {
-            addItemToBag('m0', 5); addItemToBag('m1', 2);
-            openModal("⛩️ 【吉】", `獲得了一些鍛造素材！`, "收下");
-        } else if (roll < 0.8) {
-            let getGold = player.lvl * 50; player.gold += getGold;
-            openModal("🪙 【小吉】", `獲得了 ${getGold} 金幣。`, "收下");
-        } else {
-            player.hp = Math.max(1, player.hp - 50);
-            openModal("💀 【凶】", `抽到了下下籤... 體力流失了。`, "無奈");
+
+        // 1. 【大吉】 (15%) - 財運爆發
+        if (roll < 0.15) {
+            let gain = (n * 500) + 200; // 等級越高，獎金加乘越恐怖
+            player.gold += gain;
+            showToast(`✨ 【大吉】「神櫻飛舞，心想事成！」獲得 ${gain} 金幣！`, "var(--gold)");
+        } 
+        // 2. 【吉】 (35%) - 穩健收益
+        else if (roll < 0.50) {
+            let gain = (n * 150) + 80; 
+            player.gold += gain;
+            // 隨機贈送 T0 或 T1 素材
+            let matId = Math.random() < 0.7 ? 'm0' : 'm1';
+            addItemToBag(matId, 1 * n);
+            showToast(`⛩️ 【吉】「諸事皆宜，靈氣充盈。」獲得 ${gain} 金幣與素材！`, "lime");
+        } 
+        // 3. 【平】 (35%) - 安全過渡
+        else if (roll < 0.85) {
+            showToast(`🍃 【平】「風平浪靜，隨遇而安。」神明給了妳一個微笑。`, "white");
+        } 
+        // 4. 【凶】 (12%) - 小懲大誡
+        else if (roll < 0.97) {
+            let loss = (n * 50) + 10; // 罰金大幅調低，不讓玩家肉痛
+            player.gold = Math.max(0, player.gold - loss);
+            showToast(`🌧️ 【凶】「雲霧遮月，步步留神。」遺失了 ${loss} 金幣。`, "#aaa");
+        } 
+        // 5. 【大凶】 (3%) - 極低機率的災厄
+        else {
+            let loss = (n * 100) + 50;
+            player.gold = Math.max(0, player.gold - loss);
+            player.hp = Math.max(1, player.hp - 30); // 體力扣除也減少了
+            showToast(`💀 【大凶】「荒神之怒，避之則吉！」損失 ${loss} 金幣且體力流失。`, "var(--danger)");
         }
     } else if (item.effect && EFFECT_MAP[item.effect]) {
         let eff = EFFECT_MAP[item.effect];
         applyBuff(item.effect, item.duration || 1800);
         log(`✨ 使用了【${item.name}】，獲得了 ${eff.name} 效果！`, "var(--gold)");
+        if(typeof showToast === 'function') showToast(`獲得 ${eff.name} 效果`, "var(--quest)");
     }
 
     updateUI();
     if(typeof renderBag === 'function') renderBag();
 }
-
 function buyShopItem(tab) {
     let selId = `shop-${tab}-sel`; let cntId = `shop-${tab}-cnt`; let itemId = el(selId).value; let count = parseInt(el(cntId).value); if (isNaN(count) || count < 1) count = 1; let item = getItem(itemId); let unitCost = item.cost;
     let totalCost = unitCost * count; let maxAffordable = Math.floor(player.gold / unitCost);
@@ -882,7 +1004,27 @@ function buyShopItem(tab) {
     }
 }
 
-function applyGM() { player.lvl = parseInt(el('gm-lvl').value) || 1; player.gold = parseInt(el('gm-gold').value) || 0; player.str = parseInt(el('gm-str').value) || 2; player.vit = parseInt(el('gm-vit').value) || 1; player.agi = parseInt(el('gm-agi').value) || 0; player.statPoints = parseInt(el('gm-pts').value) || 0; player.hp = getMaxHP(); updateUI(); checkSkillUnlocks(); showSubView('gm'); log('🛠️ 神明特權：各項數值已重新校準。', 'var(--gm)'); }
+function applyGM() { 
+    player.lvl = parseInt(el('gm-lvl').value) || 1; player.gold = parseInt(el('gm-gold').value) || 0; 
+    player.str = parseInt(el('gm-str').value) || 2; player.vit = parseInt(el('gm-vit').value) || 1; 
+    player.agi = parseInt(el('gm-agi').value) || 0; player.statPoints = parseInt(el('gm-pts').value) || 0; 
+    player.hp = getMaxHP(); updateUI(); checkSkillUnlocks(); 
+    log('🛠️ 神明特權：各項數值已重新校準。', 'var(--gm)'); 
+    if(typeof showToast === 'function') showToast("✅ 數值套用成功", "var(--gm)");
+}
+
+function gmUnlockMaps() {
+    player.maxMapIdx = maps.length - 1; 
+    if(typeof updateMapSelector === 'function') updateMapSelector(); 
+    updateUI(); 
+    if(typeof showToast === 'function') showToast("🗺️ 已開啟所有荒野地圖", "var(--accent)");
+}
+
+function gmAddMats() {
+    for(let k in player.mats) player.mats[k] = (player.mats[k] || 0) + 100; 
+    updateUI(); 
+    if(typeof showToast === 'function') showToast("🎁 已獲得所有素材 +100", "var(--quest)");
+}
 function previewStat(t) { 
     if(player.statPoints > 0) { 
         if (player[t] + statPreview[t] >= MAX_STAT_POINT) {

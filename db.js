@@ -30,6 +30,15 @@ const ITEM_DB = {
     'mat_tengu': { id: 'mat_tengu', cat: 'sp', name: '天狗之羽', sellable: false, sellPrice: 0, shopAvailable: false, desc: '蒼雷大天狗落下的羽毛，帶有雷電之力。' },
     'mat_fox': { id: 'mat_fox', cat: 'sp', name: '邪染神木', sellable: false, sellPrice: 0, shopAvailable: false, desc: '邪染稻荷使守護的腐朽神木。' },
     'mat_yomi': { id: 'mat_yomi', cat: 'sp', name: '黃泉之血', sellable: false, sellPrice: 0, shopAvailable: false, desc: '黃泉衛士體內流淌的冥界之血。' },
+'mat_shield_break': { id: 'mat_shield_break', cat: 'sp', name: '替身符札', cost: 1500, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'smith', desc: '【防護】強化失敗時抵銷懲罰，保護法器不降級、不歸零。' },
+    'mat_shield_down': { id: 'mat_shield_down', cat: 'sp', name: '緩衝符札', cost: 500, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'smith', desc: '【防護】Lv.6以上強化失敗時防止歸零，改為僅降1級。' },
+    'mat_hammer_low': { id: 'mat_hammer_low', cat: 'sp', name: '匠人之錘', cost: 800, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'smith', desc: '【輔助】強化時提升 10% 成功機率。' },
+    'mat_hammer_high': { id: 'mat_hammer_high', cat: 'sp', name: '神匠之錘', cost: 3000, sellable: false, sellPrice: 0, shopAvailable: false, shopTab: 'smith', desc: '【輔助】強化時提升 25% 成功機率。' },
+    'mat_gambler': { id: 'mat_gambler', cat: 'sp', name: '修羅之印', cost: 1200, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'smith', desc: '【特殊】若強化成功，有 50% 機率連升 2 級；若失敗則必定降 1 級。' },
+    'mat_perfect': { id: 'mat_perfect', cat: 'sp', name: '絕對真理', cost: 10000, sellable: false, sellPrice: 0, shopAvailable: false, shopTab: 'smith', desc: '【神物】無視機率，必定強化成功。' },
+
+
+
 
     'wash_star': { id: 'wash_star', cat: 'sp', name: '遺忘星砂', tag: '洗點', cost: 10, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'oth', desc: '神秘的星砂。可在行囊中使用，精準洗退 1 點手動分配的屬性點。' },
     'c_shrine': { id: 'c_shrine', cat: 'sp', name: '神德代幣', tag: '信仰', cost: 0, sellable: false, sellPrice: 0, shopAvailable: false, shopTab: 'oth', desc: '奉納後獲得的神明恩賜，可用於兌換特殊物資。' },
@@ -87,8 +96,8 @@ const maps = [
 ];
 
 const skillDB = {
-    'agi_combo1': { id: 'agi_combo1', req: { agi: 5 }, cat: 'init', name: '猛毒刃', type: 'active', desc: '攻擊時有 10% 機率使目標中毒，每秒扣除怪物最大生命值 5% (最高不超過玩家 速度 x 1.5 的傷害)。(持續 5 秒)', cd: 0, color: '#2ecc71' },
-    'agi_combo2': { id: 'agi_combo2', req: { agi: 15 }, cat: 'init', name: '風刃', type: 'passive', desc: '每次攻擊有 20% 機率附帶 (速度 x 1.5) 的真實傷害。', color: '#2ecc71' },
+    'agi_combo1': { id: 'agi_combo1', req: { agi: 5 }, cat: 'init', name: '猛毒刃', type: 'passive', desc: '【被動】普通攻擊時有 15% 機率使目標中毒，每秒造成 (速度 x 1.5) 的真實傷害，持續 4 秒。', color: '#2ecc71' },
+    'agi_combo2': { id: 'agi_combo2', req: { agi: 15 }, cat: 'init', name: '風刃', type: 'passive', desc: '【被動】普通攻擊時有 20% 機率喚起微風，追加 (物理攻擊 x 0.5 + 速度 x 1.0) 的風屬性傷害。', color: '#2ecc71' },
     'vit_strike': { id: 'vit_strike', req: { vit: 5 }, cat: 'init', name: '靈氣爆發', type: 'active', desc: '將體內真氣瞬間外放，造成 (魔法攻擊 x 8.0) 點魔法傷害並震暈敵方 1.5 秒。', cd: 12, color: '#e1b12c' },
     'vit_thorns': { id: 'vit_thorns', req: { vit: 15 }, cat: 'init', name: '反擊架勢', type: 'passive', desc: '受到攻擊時，必定反彈 50% 減傷前的物理傷害，並附加 (護甲防禦 x 1.5) 的震懾傷害。', color: '#e1b12c' },
     'str_cleave': { id: 'str_cleave', req: { str: 15 }, cat: 'init', name: '蓄力一擊', type: 'active', desc: '造成 (物理攻擊 x 2.5) 點物理傷害，且該次攻擊完全無視敵方防禦。', cd: 15, color: '#ff4757' },

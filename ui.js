@@ -62,6 +62,7 @@ function showSubView(s) {
     else if(s === 'work') { renderIzakayaWork(); }
     else if(s === 'casino') { renderCasino(); }
     else if(s === 'smith') { renderSmithy(); }
+else if(s === 'smith_shop') renderSmithyShop();
     else if(s === 'smith_sell') { renderSmithySell(); }
     else if(s === 'shrine') { renderShrine(); }
     else if(s === 'shrine_shop') { renderShrineShop(); } 
@@ -80,8 +81,8 @@ function showSubView(s) {
                 <div>敏捷: <input type="number" id="gm-agi" value="${player.agi}" style="width:60px;"></div><div>點數: <input type="number" id="gm-pts" value="${player.statPoints}" style="width:60px;"></div>
             </div>
             <button class="btn-action" style="width:100%; margin-bottom:10px; background:var(--gm);" onclick="applyGM()">✅ 套用數值</button>
-            <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--gm);" onclick="player.maxMapIdx=maps.length-1; updateMapSelector(); updateUI(); openModal('解鎖成功', '已開啟所有荒野地圖！', '太棒了');">🗺️ 解鎖全部地圖</button>
-            <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--mat);" onclick="for(let k in player.mats) player.mats[k]+=100; updateUI(); openModal('作弊成功','已獲得所有素材各 100 個！','好耶');">🎁 +100 全素材</button>`;
+            <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--accent);" onclick="gmUnlockMaps()">🗺️ 解鎖全部地圖</button>
+            <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--mat);" onclick="gmAddMats()">🎁 +100 全素材</button>`;
     }
 }
 
@@ -146,16 +147,22 @@ function showHelperDetails(id) {
 
 function promptWashStar() {
     let maxQty = player.mats['wash_star'] || 0;
+    
+    // ✨ 完美相容舊版：直接計算「目前屬性 - 先天屬性」，算出真正可退的點數
+    let refStr = player.str - 2;
+    let refVit = player.vit - 1;
+    let refAgi = player.agi - 0;
+
     openModal("✨ 使用遺忘星砂", 
         `<div style="text-align:left; font-size:0.95em; color:#ddd; margin-bottom:15px;">
             請選擇欲洗退的屬性。<br>
-            <span style="color:#aaa; font-size:0.85em;">(註：只能洗退您手動點上去的點數，系統與先天的屬性絕對受到保護)</span>
+            <span style="color:#aaa; font-size:0.85em;">(註：只能洗退您點上去的點數，先天屬性絕對受到保護)</span>
         </div>
         <div style="display:flex; justify-content:center; gap:10px; margin-bottom:15px;">
             <select id="wash-stat-sel" style="padding:8px; font-size:1.1em; background:#000; color:white; border:1px solid #555;">
-                <option value="str">力量 (STR) - 已分配 ${player.allocatedStats.str} 點</option>
-                <option value="vit">體質 (VIT) - 已分配 ${player.allocatedStats.vit} 點</option>
-                <option value="agi">敏捷 (AGI) - 已分配 ${player.allocatedStats.agi} 點</option>
+                <option value="str">力量 (STR) - 可退 ${refStr} 點</option>
+                <option value="vit">體質 (VIT) - 可退 ${refVit} 點</option>
+                <option value="agi">敏捷 (AGI) - 可退 ${refAgi} 點</option>
             </select>
         </div>
         <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
@@ -171,7 +178,6 @@ function promptWashStar() {
         true
     );
 }
-
 function renderBag() {
     const listEl = el('inv-list'); if(!listEl) return; 
     
@@ -382,58 +388,121 @@ function updateShopInvDisplay() {
 
 function renderSmithy() {
     const c = el('sub-content'); if(!c) return;
-    let curMatk = getMatkVal(); 
     let baseAtk = getAtkVal(); let totalDef = getDefVal(); let totalEva = parseFloat(getEvaPercent()); 
-    let gearAtk = (player.gear.arms || 0) * 3; let gearDef = (player.gear.body || 0) * 1.5; let gearEva = (player.gear.legs || 0) * 1.0; 
+    let gearAtk = (player.gear.arms || 0) * 3; 
+    let gearDef = (player.gear.body || 0) * 1.5; 
+    let gearEva = (player.gear.legs || 0) * 1.0; 
 
+    // ✨ 靈脈總成面板
     let statusPanel = `
         <div style="background:rgba(0,0,0,0.5); padding:12px; border-radius:10px; border:1px solid #444; margin-bottom:15px; font-size:0.85em; line-height:1.6;">
             <h4 style="margin:0 0 8px 0; color:var(--gold); text-align:center;">✨ 目前靈脈總成</h4>
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:5px; text-align:center;">
-                <div><span style="color:#aaa; font-size:0.9em;">物理攻擊</span><br><b style="color:white;">${baseAtk}</b><br><small style="color:#888;">(+${gearAtk})</small></div>
-                <div><span style="color:#aaa; font-size:0.9em;">魔法攻擊</span><br><b style="color:var(--quest);">${curMatk}</b><br><small style="color:#888;">(+${gearAtk})</small></div>
-                <div><span style="color:#aaa; font-size:0.9em;">護甲防禦</span><br><b style="color:white;">${totalDef}</b><br><small style="color:#888;">(+${gearDef})</small></div>
-                <div><span style="color:#aaa; font-size:0.9em;">閃避機率</span><br><b style="color:white;">${totalEva}%</b><br><small style="color:#888;">(+${gearEva}%)</small></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; text-align:center;">
+                <div><span style="color:#aaa;">物理攻擊</span><br><b style="color:white;">${baseAtk}</b><br><small style="color:#888;">(+${gearAtk})</small></div>
+                <div><span style="color:#aaa;">護甲防禦</span><br><b style="color:white;">${totalDef}</b><br><small style="color:#888;">(+${gearDef})</small></div>
+                <div><span style="color:#aaa;">閃避機率</span><br><b style="color:white;">${totalEva}%</b><br><small style="color:#888;">(+${gearEva}%)</small></div>
             </div>
         </div>`;
         
-    let invHtml = `<div style="text-align:left; font-size:0.85em; color:#aaa; margin-bottom:15px; padding:0 5px;"><span style="color:var(--gold);">💰 金幣: ${player.gold.toLocaleString()}</span> | <span style="color:#aaa;">⚙️ ${getItem('m0').name}: ${player.mats.m0 || 0}</span><br>🌿 ${getItem('m1').name}: ${player.mats.m1 || 0} | 🪵 ${getItem('m2').name}: ${player.mats.m2 || 0} | ☂️ ${getItem('m3').name}: ${player.mats.m3 || 0} | ⚡ ${getItem('m4').name}: ${player.mats.m4 || 0}</div>`;
+    let invHtml = `<div style="text-align:left; font-size:0.85em; color:#aaa; margin-bottom:15px; padding:0 5px;"><span style="color:var(--gold);">💰 金幣: ${player.gold.toLocaleString()}</span> | <span style="color:#aaa;">⚙️ ${getItem('m0').name}: ${player.mats.m0 || 0}</span></div>`;
     
     let gears = [ 
-        { id: 'arms', name: '臂甲法器', desc: '提升物理(ATK)與魔法(MATK)攻擊威力', unit: '', step: 3 }, 
-        { id: 'body', name: '胴甲法器', desc: '提升護甲防禦(DEF)，減少受到的物理傷害', unit: '', step: 1.5 }, 
-        { id: 'legs', name: '足具法器', desc: '提升敏捷閃避(EVA)，增加完全閃避攻擊的機率', unit: '%', step: 1.0 } 
+        { id: 'arms', name: '臂甲法器', desc: '提升物理與魔法攻擊威力', step: 3 }, 
+        { id: 'body', name: '胴甲法器', desc: '提升護甲防禦', step: 1.5 }, 
+        { id: 'legs', name: '足具法器', desc: '提升閃避機率', unit: '%', step: 1.0 } 
     ];
     
     let upgradeHtml = gears.map(g => {
-        let lv = player.gear[g.id] || 0; let req = getUpgradeCost(lv); let matName = getItem(req.matKey).name; 
-        let canUpgrade = (player.gold >= req.goldCost && (player.mats.m0 || 0) >= req.ironCost && (player.mats[req.matKey] || 0) >= req.specialCost); let btnColor = canUpgrade ? 'var(--mat)' : '#444';
-        let currentEff = (lv * g.step).toFixed(g.step % 1 === 0 ? 0 : 1); let nextEff = ((lv + 1) * g.step).toFixed(g.step % 1 === 0 ? 0 : 1); let effStr = `法器加成: <span style="color:white;">+${currentEff}${g.unit}</span> ➔ <span style="color:lime;">+${nextEff}${g.unit}</span>`;
+        let lv = player.gear[g.id] || 0; 
+        let req = getUpgradeCost(lv); 
+        let matName = getItem(req.matKey).name; 
+        
+        // ✨ 任務：讀取 script.js 裡的機率陣列
+        let rate = (typeof UPGRADE_RATES !== 'undefined') ? (UPGRADE_RATES[lv] || 0) : 0;
+        
+        let canUpgrade = (player.gold >= req.goldCost && (player.mats.m0 || 0) >= req.ironCost && (player.mats[req.matKey] || 0) >= req.specialCost);
+        
         return `
-            <div class="item-row" style="flex-direction:column; align-items:flex-start; margin-bottom:10px;">
-                <div style="width:100%; display:flex; justify-content:space-between; margin-bottom:4px;">
-                    <b style="color:white;">${g.name} <span style="color:var(--gold);">Lv.${lv}</span></b>
-                    <button class="btn-action" style="background:${btnColor}; padding:4px 10px; font-size:0.85em;" ${!canUpgrade?'disabled':''} onclick="upgradeGear('${g.id}')">靈脈強化</button>
+            <div class="item-row" style="flex-direction:column; align-items:flex-start; margin-bottom:10px; border-left: 4px solid var(--mat);">
+                <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
+                    <b style="color:white; font-size:1.1em;">${g.name} <span style="color:var(--gold);">Lv.${lv}</span></b>
+                    <span style="font-size:0.9em; color:${rate > 50 ? 'lime' : (rate > 20 ? 'var(--gold)' : 'var(--danger)')}; font-weight:bold;">成功率: ${rate}%</span>
                 </div>
-                <small style="color:#aaa; display:block; margin-bottom:4px;">${g.desc}</small>
-                <div style="font-size:0.8em; color:#aaa; margin-bottom:4px;">${effStr}</div>
-                <div style="font-size:0.8em; color:#888;">需求: 💰 ${req.goldCost} | ⚙️ ${getItem('m0').name} x${req.ironCost} | 🔮 ${matName} x${req.specialCost}</div>
+                <div style="font-size:0.8em; color:#888; margin: 4px 0;">需求: 💰${req.goldCost} | ⚙️${getItem('m0').name}x${req.ironCost} | 🔮${matName}x${req.specialCost}</div>
+                <button class="btn-action" style="width:100%; background:${canUpgrade ? 'var(--mat)' : '#444'}; margin-top:5px; font-size:0.95em;" ${!canUpgrade?'disabled':''} onclick="upgradeGear('${g.id}')">開始強化</button>
             </div>`;
     }).join("");
     
-    c.innerHTML = `<h3>⚒️ 虎徹的鍛冶屋</h3>${statusPanel}${invHtml}<div style="display:flex; margin-bottom:15px;"><button class="tab-btn active">靈脈強化</button><button class="tab-btn" onclick="showSubView('smith_sell')">變賣素材</button></div>${upgradeHtml}`;
+   c.innerHTML = `
+        <h3>⚒️ 虎徹的鍛冶屋</h3>
+        ${statusPanel}
+        ${invHtml}
+        <div style="display:flex; margin-bottom:15px;">
+            <button class="tab-btn active">靈脈強化</button>
+            <button class="tab-btn" onclick="showSubView('smith_shop')">採買道具</button>
+        </div>
+        
+        <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.85em; border:1px dashed #666;">
+            <p style="margin:0 0 8px 0; color:var(--cherry); text-align:center;">⚒️ 強化輔助設置</p>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <label style="cursor:pointer;"><input type="checkbox" id="use-hammer"> 匠人之錘 <span style="color:var(--gold);">(${player.mats.mat_hammer_low || 0})</span></label>
+                <label style="cursor:pointer;"><input type="checkbox" id="use-shield"> 替身符札 <span style="color:var(--gold);">(${player.mats.mat_shield_break || 0})</span></label>
+                <label style="cursor:pointer;"><input type="checkbox" id="use-gambler"> 修羅之印 <span style="color:var(--gold);">(${player.mats.mat_gambler || 0})</span></label>
+                <label style="cursor:pointer; color:var(--quest);"><input type="checkbox" id="use-perfect"> 絕對真理 <span style="color:var(--gold);">(${player.mats.mat_perfect || 0})</span></label>
+            </div>
+            <div style="margin-top:8px; font-size:0.8em; color:#888; border-top:1px solid #333; pt-5px;">
+                * 註：若勾選「修羅之印」，失敗必降級，防護道具將失效。
+            </div>
+        </div>
+
+        ${upgradeHtml}
+        <p style="text-align:center; color:#666; font-size:0.8em; margin-top:10px;">※ 提示：Lv.6 以上強化失敗，靈脈將會崩塌歸零！</p>
+    `;
 }
 
-function renderSmithySell() {
+function renderSmithyShop() {
     const c = el('sub-content'); if(!c) return;
-    c.innerHTML = `<h3>⚒️ 虎徹的鍛冶屋</h3>
-    <div style="display:flex; margin-bottom:15px;"><button class="tab-btn" onclick="showSubView('smith')">靈脈強化</button><button class="tab-btn active">變賣素材</button></div>
-    <div style="background:#111; padding:20px; border-radius:8px; text-align:center; color:#aaa; border:1px solid #333;">
-        <p>老闆：「要變賣多餘的素材嗎？去妳的行囊裡整理吧！」</p>
-        <button class="btn-action" style="background:var(--gold); color:black; margin-top:10px; font-size:1.05em;" onclick="backToVillage(); switchLogTab('inv'); switchView('battle');">📦 前往行囊變賣</button>
-    </div>`;
+    let shopItems = ['mat_shield_break', 'mat_shield_down', 'mat_hammer_low', 'mat_gambler'];
+    
+    let shopHtml = shopItems.map(id => {
+        let item = getItem(id);
+        let canAfford = player.gold >= item.cost;
+        return `
+            <div class="item-row" style="padding:12px; border-left-color:var(--cherry);">
+                <div style="flex:1;">
+                    <b style="color:var(--gold);">${item.name}</b><br>
+                    <small style="color:#aaa;">${item.desc}</small>
+                </div>
+                <button class="btn-action" style="background:${canAfford ? 'var(--quest)' : '#444'}; color:${canAfford?'black':'#888'}; min-width:80px;" ${!canAfford?'disabled':''} onclick="buySmithItem('${id}')">
+                    $${item.cost.toLocaleString()}
+                </button>
+            </div>`;
+    }).join("");
+
+    c.innerHTML = `
+        <h3>⚒️ 虎徹的鍛冶屋</h3>
+        <p style="margin-top:0;">持有金幣：<span style="color:var(--gold); font-size:1.1em; font-weight:bold;">${player.gold.toLocaleString()}</span></p>
+        <div style="display:flex; margin-bottom:15px;">
+            <button class="tab-btn" onclick="showSubView('smith')">靈脈強化</button>
+            <button class="tab-btn active">採買道具</button>
+        </div>
+        ${shopHtml}
+        <div style="text-align:center; margin-top:15px;">
+            <button class="btn-action" style="width:90%; background:#444; color:white;" onclick="backToVillage(); switchLogTab('inv'); switchView('battle');">📦 前往行囊變賣素材</button>
+        </div>
+    `;
 }
 
+// ✨ 新增：鍛造屋購買邏輯
+function buySmithItem(id) {
+    let item = getItem(id);
+    if (player.gold < item.cost) return showToast("❌ 金幣不足！", "var(--danger)");
+    player.gold -= item.cost;
+    player.mats[id] = (player.mats[id] || 0) + 1;
+    showToast(`獲得 ${item.name}`, "var(--quest)");
+    updateUI();
+    renderSmithyShop();
+}
 function renderIzakayaMenu() {
     let helperName = (player.activeHelper && HELPER_DB[player.activeHelper]) ? HELPER_DB[player.activeHelper].name : "前往招募";
     el('sub-content').innerHTML = `<h3>🏮 居酒屋「宵月」</h3>
