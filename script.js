@@ -420,9 +420,25 @@ function getSpdVal() {
     return Math.floor(player.agi * 1); 
 }
 function getEvaPercent() { 
-    let base = player.agi * 0.1 + ((player.gear.legs || 0) * 1.0); 
-    if (player.activeHelper && HELPER_DB[player.activeHelper]) { base += HELPER_DB[player.activeHelper].passive(player).eva || 0; } 
-    return Math.min(70, base); // ✨ 強制最高不超過 70
+    // 1. ✨ 屬性點閃避 (AGI)：最高鎖定在 55% (需 550 點敏捷)
+    let agiDodge = Math.min(55, player.agi * 0.1); 
+    
+    // 2. ✨ 裝備閃避 (足具)：最高鎖定在 15% (Lv.15 足具提供)
+    // 註：目前設定是每級 +1.0%
+    let gearDodge = Math.min(15, (player.gear.legs || 0) * 1.0); 
+    
+    // 3. 計算總合 (55 + 15 = 70)
+    let base = agiDodge + gearDodge; 
+
+    // 夥伴加成 (額外加上去，不佔用屬性與裝備的配額)
+    try {
+        if (player.activeHelper && HELPER_DB[player.activeHelper]) { 
+            base += HELPER_DB[player.activeHelper].passive(player).eva || 0; 
+        }
+    } catch(e) {}
+
+    // 最終天花板鎖定在 70% (或是稍微開放到 75% 若包含夥伴加成)
+    return Math.min(70, base); 
 }
 function getMaxHP() { return Math.floor(player.vit * 10 + 50); }
 
@@ -487,13 +503,17 @@ function startBattleLoop() {
     let isDummy = player.mapIdx === 0;
     if (isDummy) { combatState.zenTimer += tickSec; if(combatState.zenTimer >= 20) { handleZenComplete(); combatState.zenTimer = 0; combatState.zenDmgAccum = 0; } }
 
-    if (!isDummy && monster.hp > 0 && monster.poisoned > 0) {
+   if (!isDummy && monster.hp > 0 && monster.poisoned > 0) {
         monster.poisoned -= tickSec;
-        // 基礎毒傷：完全看玩家的速度(敏捷)
-        let poisonDmg = Math.max(1, Math.floor(getSpdVal() * 1.5 * tickSec)); 
-        monster.hp -= poisonDmg;
-        // 降低跳字頻率，避免畫面太亂
-        if (Math.random() < 0.2) showDmg('m-box', "毒 " + poisonDmg, '#2ecc71'); 
+        monster.poisonTick = (monster.poisonTick || 0) + tickSec; // 紀錄累積時間
+        
+        if (monster.poisonTick >= 1.0) { // 累積滿 1 秒才跳一次毒傷
+            monster.poisonTick -= 1.0;
+            // 毒傷不再被 tickSec 稀釋，打出完整的敏捷倍率傷害
+            let poisonDmg = Math.max(1, Math.floor(getSpdVal() * 1.5)); 
+            monster.hp -= poisonDmg;
+            showDmg('m-box', "猛毒 " + poisonDmg, '#2ecc71'); // 必定顯示綠字
+        }
     }
 
     let baseAtk = getAtkVal(); let skillUsed = false;
@@ -502,27 +522,43 @@ function startBattleLoop() {
     }
 
     if(!skillUsed && baseAtk > 0) { 
-        let mDodge = Math.max(0, Math.min(70, (monster.eva || 0) + ((monster.agi || 0) - player.agi) * 0.1));
+        // 1. ✨ 力量命中補正 (STR Hit Bonus)
+        // 戰士靠氣勢與重武器壓制對方閃避，每 10 點 STR 抵銷 1% 閃避
+        let strHitBonus = player.str * 0.1; 
+        let rawDodge = (monster.eva || 0) + ((monster.agi || 0) - player.agi) * 0.1;
+        
+        // 最終閃避判定：至少保留 5% 的隨機性，最高不超過 70%
+        let finalDodge = Math.max(5, Math.min(70, rawDodge - strHitBonus));
+        
         let critChance = Math.min(30, player.critRate || 0);
         let isCrit = (Math.random() * 100) < critChance;
 
-        if (isCrit || (Math.random() * 100 >= mDodge)) {
+        // 判定是否命中
+        if (isCrit || (Math.random() * 100 >= finalDodge)) {
             let mDef = monster.defVal || 0;
+            
+            // 2. ✨ 普攻傷害 (不帶自動破甲，回歸標準公式)
             let finalDmg = Math.max(0, baseAtk - (mDef / 2));
             finalDmg = Math.floor(finalDmg * (1 - (monster.dr || 0)));
+            
+            // 力量流戰士的保底傷害：即便沒破甲，重兵器砸下去還是有保底感
+            let minDmg = Math.floor(player.str * 0.5);
+            if (finalDmg < minDmg) finalDmg = minDmg;
+
             if (isCrit) finalDmg = Math.floor(finalDmg * 1.5);
             
             // ✨ 猛毒刃觸發判定
             if (hasPassive('agi_combo1') && Math.random() < 0.15) {
-                monster.poisoned = 4.0; // 刷新中毒時間為 4 秒
-                showDmg('m-box', "中毒", '#2ecc71'); 
+                monster.poisoned = 4.0; 
+                monster.poisonTick = 1.0; // 觸發瞬間立刻跳第一次毒傷，讓玩家立刻有感
+                showDmg('m-box', "毒刃附著", '#2ecc71'); 
             }
             
-            // ✨ 風刃觸發判定
+            // ✨ 優化 3：風刃 (加入專屬的視覺跳字)
             if (hasPassive('agi_combo2') && Math.random() < 0.20) {
                 let windDmg = Math.floor(baseAtk * 0.5 + getSpdVal() * 1.0);
-                finalDmg += windDmg; // 將風刃傷害直接揉合進本次普攻中，形成高爆發
-                // 為了避免畫面日誌洗頻，風刃作為基礎被動不再寫入 log，而是用數字變大來體現
+                finalDmg += windDmg; 
+                showDmg('m-box', "風刃 +" + windDmg, '#81ecec'); // 明確跳出青色文字，告訴玩家風刃切了多少血
             }
             
             if (finalDmg <= 0) { finalDmg = 0; if(Math.random() < 0.05) log(`[警告] 攻擊無法穿透敵方護甲，傷害為 0！`, "#888"); }
@@ -828,99 +864,105 @@ function getUpgradeCost(level) {
     return { matKey, goldCost, ironCost, specialCost }; 
 }
 
-function upgradeGear(gid) { 
-    let lv = player.gear[gid] || 0; 
+function upgradeGear(gid) {
+    let lv = player.gear[gid] || 0;
+    if (lv >= (typeof GEAR_MAX_LVL !== 'undefined' ? GEAR_MAX_LVL : 15)) {
+        showToast("此法器已達極限！", "var(--danger)");
+        return;
+    }
     
-    if (lv >= 15) {
-        if(typeof showToast === 'function') showToast("此法器已達極限！", "var(--danger)");
+    let req = getUpgradeCost(lv);
+    const useHammer = document.getElementById('use-hammer')?.checked;
+    const useShield = document.getElementById('use-shield')?.checked;
+    const useShieldDown = document.getElementById('use-shield-down')?.checked; // ✨ 新增：緩衝符札
+    const useGambler = document.getElementById('use-gambler')?.checked;
+    const usePerfect = document.getElementById('use-perfect')?.checked;
+
+    if (player.gold < req.goldCost || (player.mats.m0 || 0) < req.ironCost || (player.mats[req.matKey] || 0) < req.specialCost) {
+        showToast("❌ 素材或金幣不足！", "var(--danger)");
         return;
     }
 
-    let req = getUpgradeCost(lv); 
-    let useHammer = document.getElementById('use-hammer') ? document.getElementById('use-hammer').checked : false;
-    let useShield = document.getElementById('use-shield') ? document.getElementById('use-shield').checked : false;
+    // 輔助道具檢查
+    if (useHammer && (player.mats.mat_hammer_low || 0) <= 0) return showToast("❌ 匠人之錘不足！", "var(--danger)");
+    if (useShield && (player.mats.mat_shield_break || 0) <= 0) return showToast("❌ 替身符札不足！", "var(--danger)");
+    if (useShieldDown && (player.mats.mat_shield_down || 0) <= 0) return showToast("❌ 緩衝符札不足！", "var(--danger)"); // ✨ 檢查數量
+    if (useGambler && (player.mats.mat_gambler || 0) <= 0) return showToast("❌ 修羅之印不足！", "var(--danger)");
+    if (usePerfect && (player.mats.mat_perfect || 0) <= 0) return showToast("❌ 絕對真理不足！", "var(--danger)");
 
-    if (player.gold < req.goldCost || (player.mats.m0 || 0) < req.ironCost || (player.mats[req.matKey] || 0) < req.specialCost) { 
-        if(typeof showToast === 'function') showToast("❌ 強化素材或金幣不足！", "var(--danger)");
-        return;
-    }
-    if (useHammer && (player.mats.mat_hammer || 0) <= 0) {
-        if(typeof showToast === 'function') showToast("❌ 匠神之錘數量不足！", "var(--danger)");
-        return;
-    }
-    if (useShield && (player.mats.mat_shield || 0) <= 0) {
-        if(typeof showToast === 'function') showToast("❌ 守護符札數量不足！", "var(--danger)");
-        return;
-    }
+    player.gold -= req.goldCost;
+    player.mats.m0 -= req.ironCost;
+    player.mats[req.matKey] -= req.specialCost;
 
-    player.gold -= req.goldCost; 
-    player.mats.m0 -= req.ironCost; 
-    player.mats[req.matKey] -= req.specialCost; 
-    
-    let rate = UPGRADE_RATES[lv] || 1;
-    if (useHammer) {
-        rate += 15; 
-        player.mats.mat_hammer--; 
-    }
+    let rate = (typeof UPGRADE_RATES !== 'undefined') ? (UPGRADE_RATES[lv] || 10) : 10;
+    if (useHammer) { rate += 10; player.mats.mat_hammer_low--; }
+    if (usePerfect) { rate = 100; player.mats.mat_perfect--; }
 
-    let roll = Math.random() * 100;
-    if (roll <= rate) {
-        player.gear[gid]++; 
-        log(`⚒️ 【大成功】靈脈共鳴！${gid} 提升至 Lv.${player.gear[gid]}`, "lime"); 
-        if(typeof showToast === 'function') showToast(`✨ 強化成功！Lv.${player.gear[gid]}`, "lime");
+    if (Math.random() * 100 <= rate) {
+        let up = (useGambler && Math.random() < 0.5) ? 2 : 1;
+        if(useGambler) player.mats.mat_gambler--;
+        player.gear[gid] = Math.min(15, lv + up);
+        showToast(`✨ 強化成功！Lv.${player.gear[gid]}`, "lime");
     } else {
-        if (useShield) {
-            player.mats.mat_shield--;
-            log(`🛡️ 強化失敗！但守護符札保住了法器能量。`, "var(--gold)");
-            if(typeof showToast === 'function') showToast("🛡️ 護符生效，法器未降級！", "var(--gold)");
+        // ❌ 失敗判定優先級：修羅 > 替身 > 緩衝 > 無防護
+        if (useGambler) {
+            player.mats.mat_gambler--;
+            player.gear[gid] = Math.max(0, lv - 1);
+            showToast("💥 修羅反噬！必定降級", "var(--danger)");
+        } else if (useShield) {
+            player.mats.mat_shield_break--;
+            showToast("🛡️ 替身符生效，等級維持", "var(--gold)");
+        } else if (useShieldDown) {
+            // ✨ 新增：緩衝符札發揮作用，即使 Lv.6 以上也只降 1 級，不會歸零
+            player.mats.mat_shield_down--;
+            player.gear[gid] = Math.max(0, lv - 1);
+            showToast("🛡️ 緩衝符生效，僅降一級", "var(--gold)");
         } else {
-            let oldLv = player.gear[gid];
-            if (oldLv >= 6) {
-                player.gear[gid] = 0; 
-                log(`💥 強化失敗，靈脈崩塌！${gid} 等級歸零！`, "var(--danger)");
-                if(typeof showToast === 'function') showToast("💥 強化失敗，靈脈崩塌歸零！", "var(--danger)");
-            } else {
-                player.gear[gid] = Math.max(0, oldLv - 1); 
-                log(`💥 強化失敗！${gid} 降至 Lv.${player.gear[gid]}`, "var(--danger)");
-                if(typeof showToast === 'function') showToast("📉 強化失敗，法器降級", "var(--danger)");
-            }
+            // 無防護的殘酷懲罰
+            player.gear[gid] = (lv >= 6) ? 0 : Math.max(0, lv - 1);
+            showToast((lv >= 6) ? "💀 靈脈崩塌，等級歸零！" : "💥 強化失敗，降級！", "var(--danger)");
         }
     }
-    
-    updateUI(); 
-    if(typeof renderSmithy === 'function') renderSmithy(); 
-}    
-    // 7. 更新介面與存檔
-    updateUI(); 
-    if(typeof renderSmithy === 'function') renderSmithy(); 
+    updateUI();
+    if(typeof renderSmithy === 'function') renderSmithy();
+}
+
+// --- 洗點系統核心 ---
 function useWashStar(statType, qty) {
     qty = parseInt(qty);
     if(isNaN(qty) || qty <= 0) return;
-    if ((player.mats['wash_star'] || 0) < qty) return typeof showToast === 'function' ? showToast("行囊中的遺忘星砂數量不足。", "var(--danger)") : null;
     
-    // ✨ 完美相容舊版：改用實際屬性減去初始屬性來判斷
-    let baseStats = { str: 2, vit: 1, agi: 0 };
-    let refundable = player[statType] - baseStats[statType];
-    
-    if (refundable < qty) {
-        return openModal("無法洗鍊", `您目前的 ${statType.toUpperCase()} 點數扣除先天屬性後，不足 ${qty} 點可供洗退！<br><small style="color:#aaa;">(先天屬性受到天道保護，不可洗退)</small>`, "了解");
+    // 1. 檢查星砂數量
+    if ((player.mats['wash_star'] || 0) < qty) {
+        if(typeof showToast === 'function') showToast("❌ 遺忘星砂數量不足。", "var(--danger)");
+        return;
     }
+
+    // 2. 檢查屬性點是否夠扣
+    const baseStats = { str: 2, vit: 1, agi: 0 };
+    if ((player[statType] - baseStats[statType]) < qty) {
+        if(typeof showToast === 'function') showToast("❌ 點數不足以洗退。", "var(--danger)");
+        return;
+    }
+
+    // 3. 執行洗點邏輯 (不再呼叫第二次 openModal)
+    player.mats['wash_star'] -= qty;
+    player[statType] -= qty;
     
-    // ✨ 雙重確認防呆機制 (true 代表顯示取消按鈕)
-    openModal("✨ 遺忘星砂", `確定要消耗 ${qty} 個星砂，洗退 ${qty} 點 ${statType.toUpperCase()} 嗎？`, "確定洗退", () => {
-        player.mats['wash_star'] -= qty;
-        player[statType] -= qty;
-        // 如果有紀錄手動點數，順便校準
-        if (player.allocatedStats) player.allocatedStats[statType] = Math.max(0, player.allocatedStats[statType] - qty);
-        player.statPoints += qty;
-        
-        player.hp = Math.min(player.hp, getMaxHP());
-        validateEquippedSkills();
-        updateUI();
-        log(`✨ 點數重塑：成功洗退了 ${qty} 點 ${statType.toUpperCase()}。`, "var(--quest)");
-        if(typeof renderBag === 'function') renderBag();
-    }, true);
-}function buyShrineItem(id) {
+    // ✨ 同步扣除已分配點數紀錄 (保護存檔不崩潰)
+    if(!player.allocatedStats) player.allocatedStats = {str:0, vit:0, agi:0};
+    player.allocatedStats[statType] = Math.max(0, player.allocatedStats[statType] - qty);
+    
+    player.statPoints += qty;
+    player.hp = Math.min(player.hp, getMaxHP()); // 避免體質洗掉後血量溢出
+    
+    // 4. 視覺與介面更新
+    if(typeof showToast === 'function') showToast(`✨ 成功洗退 ${qty} 點 ${statType.toUpperCase()}`, "var(--gold)");
+    
+    updateUI(); 
+    if(typeof renderBag === 'function') renderBag();
+}
+function buyShrineItem(id) {
     let item = getItem(id);
     let cost = item.cost;
     if ((player.shrineDonation || 0) < item.reqDonation) return showToast("🔒 累積奉納不足，神明尚未認可您的虔誠。", "var(--danger)");

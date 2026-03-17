@@ -148,32 +148,22 @@ function showHelperDetails(id) {
 function promptWashStar() {
     let maxQty = player.mats['wash_star'] || 0;
     
-    // ✨ 完美相容舊版：直接計算「目前屬性 - 先天屬性」，算出真正可退的點數
+    // 直接用目前點數扣掉初始值
     let refStr = player.str - 2;
     let refVit = player.vit - 1;
     let refAgi = player.agi - 0;
 
     openModal("✨ 使用遺忘星砂", 
-        `<div style="text-align:left; font-size:0.95em; color:#ddd; margin-bottom:15px;">
-            請選擇欲洗退的屬性。<br>
-            <span style="color:#aaa; font-size:0.85em;">(註：只能洗退您點上去的點數，先天屬性絕對受到保護)</span>
-        </div>
-        <div style="display:flex; justify-content:center; gap:10px; margin-bottom:15px;">
-            <select id="wash-stat-sel" style="padding:8px; font-size:1.1em; background:#000; color:white; border:1px solid #555;">
-                <option value="str">力量 (STR) - 可退 ${refStr} 點</option>
-                <option value="vit">體質 (VIT) - 可退 ${refVit} 點</option>
-                <option value="agi">敏捷 (AGI) - 可退 ${refAgi} 點</option>
-            </select>
-        </div>
-        <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
-            <span>使用數量：</span>
-            <input type="number" id="wash-qty" value="1" min="1" max="${maxQty}" style="width:80px; font-size:1.2em; text-align:center; background:#111; color:var(--gold); border:1px solid var(--gold);">
-        </div>`,
-        "確認洗退",
+        `<div style="text-align:left; font-size:0.95em; color:#ddd; margin-bottom:15px;">請選擇欲洗退的屬性：</div>
+        <select id="wash-stat-sel" style="width:100%; padding:8px; margin-bottom:15px; background:#000; color:white;">
+            <option value="str">力量 (可退 ${refStr})</option>
+            <option value="vit">體質 (可退 ${refVit})</option>
+            <option value="agi">敏捷 (可退 ${refAgi})</option>
+        </select>
+        <input type="number" id="wash-qty" value="1" min="1" max="${maxQty}" style="width:100%; text-align:center;">`,
+        "確認",
         () => {
-            let st = el('wash-stat-sel').value;
-            let qt = el('wash-qty').value;
-            useWashStar(st, qt); 
+            useWashStar(el('wash-stat-sel').value, el('wash-qty').value); 
         },
         true
     );
@@ -388,75 +378,106 @@ function updateShopInvDisplay() {
 
 function renderSmithy() {
     const c = el('sub-content'); if(!c) return;
-    let baseAtk = getAtkVal(); let totalDef = getDefVal(); let totalEva = parseFloat(getEvaPercent()); 
+    
+    // 1. 抓取目前的勾選狀態
+    const currentHammer = document.getElementById('use-hammer')?.checked || false;
+    const currentShield = document.getElementById('use-shield')?.checked || false;
+    const currentShieldDown = document.getElementById('use-shield-down')?.checked || false; // ✨ 抓取緩衝符札狀態
+    const currentGambler = document.getElementById('use-gambler')?.checked || false;
+    const currentPerfect = document.getElementById('use-perfect')?.checked || false;
+
+    // 2. 計算面板數值
+    let baseAtk = getAtkVal(); 
+    let curMatk = getMatkVal(); 
+    let totalDef = getDefVal(); 
+    let totalEva = parseFloat(getEvaPercent()); 
     let gearAtk = (player.gear.arms || 0) * 3; 
     let gearDef = (player.gear.body || 0) * 1.5; 
     let gearEva = (player.gear.legs || 0) * 1.0; 
 
-    // ✨ 靈脈總成面板
+    // 3. 準備 UI 區塊 (面板與資源)
     let statusPanel = `
         <div style="background:rgba(0,0,0,0.5); padding:12px; border-radius:10px; border:1px solid #444; margin-bottom:15px; font-size:0.85em; line-height:1.6;">
             <h4 style="margin:0 0 8px 0; color:var(--gold); text-align:center;">✨ 目前靈脈總成</h4>
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; text-align:center;">
-                <div><span style="color:#aaa;">物理攻擊</span><br><b style="color:white;">${baseAtk}</b><br><small style="color:#888;">(+${gearAtk})</small></div>
+                <div><span style="color:#aaa;">物 / 魔攻擊</span><br><b style="color:white;">${baseAtk} / ${curMatk}</b><br><small style="color:#888;">(+${gearAtk})</small></div>
                 <div><span style="color:#aaa;">護甲防禦</span><br><b style="color:white;">${totalDef}</b><br><small style="color:#888;">(+${gearDef})</small></div>
                 <div><span style="color:#aaa;">閃避機率</span><br><b style="color:white;">${totalEva}%</b><br><small style="color:#888;">(+${gearEva}%)</small></div>
             </div>
         </div>`;
         
     let invHtml = `<div style="text-align:left; font-size:0.85em; color:#aaa; margin-bottom:15px; padding:0 5px;"><span style="color:var(--gold);">💰 金幣: ${player.gold.toLocaleString()}</span> | <span style="color:#aaa;">⚙️ ${getItem('m0').name}: ${player.mats.m0 || 0}</span></div>`;
-    
+
+    // 4. 定義各法器屬性與每級提升幅度
     let gears = [ 
-        { id: 'arms', name: '臂甲法器', desc: '提升物理與魔法攻擊威力', step: 3 }, 
-        { id: 'body', name: '胴甲法器', desc: '提升護甲防禦', step: 1.5 }, 
-        { id: 'legs', name: '足具法器', desc: '提升閃避機率', unit: '%', step: 1.0 } 
+        { id: 'arms', name: '臂甲法器', attr: '物/魔攻擊', step: 3, unit: '' }, 
+        { id: 'body', name: '胴甲法器', attr: '護甲防禦', step: 1.5, unit: '' }, 
+        { id: 'legs', name: '足具法器', attr: '閃避機率', step: 1.0, unit: '%' } 
     ];
     
+    // 5. 生成裝備清單
     let upgradeHtml = gears.map(g => {
         let lv = player.gear[g.id] || 0; 
         let req = getUpgradeCost(lv); 
-        let matName = getItem(req.matKey).name; 
+        let matName = getItem(req.matKey).name;
         
-        // ✨ 任務：讀取 script.js 裡的機率陣列
-        let rate = (typeof UPGRADE_RATES !== 'undefined') ? (UPGRADE_RATES[lv] || 0) : 0;
+        // 抓取基礎機率
+        let baseRate = (typeof UPGRADE_RATES !== 'undefined') ? (UPGRADE_RATES[lv] || 0) : 0;
         
+        // 動態計算預覽機率
+        let displayRate = baseRate;
+        if (currentHammer) displayRate += 10;
+        if (currentPerfect) displayRate = 100;
+        displayRate = Math.min(100, displayRate);
+
         let canUpgrade = (player.gold >= req.goldCost && (player.mats.m0 || 0) >= req.ironCost && (player.mats[req.matKey] || 0) >= req.specialCost);
-        
+
+        // 計算當前屬性與下一級屬性
+        let curStat = lv * g.step;
+        let nextStat = (lv + 1) * g.step;
+        let isMax = lv >= 15;
+        let statPreviewHtml = `<div style="font-size:0.85em; color:#aaa; margin:4px 0;">
+            ${g.attr}：<b style="color:white;">+${curStat}${g.unit}</b> 
+            ${isMax ? '<span style="color:var(--gold); font-size:0.9em;">(已達極限)</span>' : `➔ <b style="color:lime;">+${nextStat}${g.unit}</b>`}
+        </div>`;
+
         return `
             <div class="item-row" style="flex-direction:column; align-items:flex-start; margin-bottom:10px; border-left: 4px solid var(--mat);">
                 <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
-                    <b style="color:white; font-size:1.1em;">${g.name} <span style="color:var(--gold);">Lv.${lv}</span></b>
-                    <span style="font-size:0.9em; color:${rate > 50 ? 'lime' : (rate > 20 ? 'var(--gold)' : 'var(--danger)')}; font-weight:bold;">成功率: ${rate}%</span>
+                    <b style="color:white; font-size:1.05em;">${g.name} <span style="color:var(--gold);">Lv.${lv}</span></b>
+                    <span style="font-size:0.9em; font-weight:bold; color:${displayRate > 50 ? 'lime' : 'var(--danger)'};">成功率: ${displayRate}%</span>
                 </div>
-                <div style="font-size:0.8em; color:#888; margin: 4px 0;">需求: 💰${req.goldCost} | ⚙️${getItem('m0').name}x${req.ironCost} | 🔮${matName}x${req.specialCost}</div>
-                <button class="btn-action" style="width:100%; background:${canUpgrade ? 'var(--mat)' : '#444'}; margin-top:5px; font-size:0.95em;" ${!canUpgrade?'disabled':''} onclick="upgradeGear('${g.id}')">開始強化</button>
+                ${statPreviewHtml}
+                <div style="font-size:0.8em; color:#888; margin-bottom: 4px;">需求: 💰${req.goldCost} | ⚙️${getItem('m0').name}x${req.ironCost} | 🔮${matName}x${req.specialCost}</div>
+                <button class="btn-action" style="width:100%; margin-top:5px; background:${canUpgrade ? 'var(--mat)' : '#444'}; color:${canUpgrade?'#000':'#888'}" ${!canUpgrade?'disabled':''} onclick="upgradeGear('${g.id}')">靈脈強化</button>
             </div>`;
     }).join("");
-    
-   c.innerHTML = `
+
+    // 6. 輸出完整畫面
+    c.innerHTML = `
         <h3>⚒️ 虎徹的鍛冶屋</h3>
         ${statusPanel}
         ${invHtml}
+        
         <div style="display:flex; margin-bottom:15px;">
             <button class="tab-btn active">靈脈強化</button>
             <button class="tab-btn" onclick="showSubView('smith_shop')">採買道具</button>
         </div>
         
-        <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.85em; border:1px dashed #666;">
-            <p style="margin:0 0 8px 0; color:var(--cherry); text-align:center;">⚒️ 強化輔助設置</p>
+        <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.85em;">
+            <p style="text-align:center; color:var(--cherry); margin:0 0 5px 0;">🔧 強化輔助設置</p>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                <label style="cursor:pointer;"><input type="checkbox" id="use-hammer"> 匠人之錘 <span style="color:var(--gold);">(${player.mats.mat_hammer_low || 0})</span></label>
-                <label style="cursor:pointer;"><input type="checkbox" id="use-shield"> 替身符札 <span style="color:var(--gold);">(${player.mats.mat_shield_break || 0})</span></label>
-                <label style="cursor:pointer;"><input type="checkbox" id="use-gambler"> 修羅之印 <span style="color:var(--gold);">(${player.mats.mat_gambler || 0})</span></label>
-                <label style="cursor:pointer; color:var(--quest);"><input type="checkbox" id="use-perfect"> 絕對真理 <span style="color:var(--gold);">(${player.mats.mat_perfect || 0})</span></label>
+                <label><input type="checkbox" id="use-hammer" ${currentHammer?'checked':''} onchange="renderSmithy()"> 匠人之錘 (${player.mats.mat_hammer_low || 0})</label>
+                <label><input type="checkbox" id="use-shield" ${currentShield?'checked':''} onchange="renderSmithy()"> 替身符札 (${player.mats.mat_shield_break || 0})</label>
+                <label><input type="checkbox" id="use-shield-down" ${currentShieldDown?'checked':''} onchange="renderSmithy()"> 緩衝符札 (${player.mats.mat_shield_down || 0})</label> <label><input type="checkbox" id="use-gambler" ${currentGambler?'checked':''} onchange="renderSmithy()"> 修羅之印 (${player.mats.mat_gambler || 0})</label>
             </div>
-            <div style="margin-top:8px; font-size:0.8em; color:#888; border-top:1px solid #333; pt-5px;">
-                * 註：若勾選「修羅之印」，失敗必降級，防護道具將失效。
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
+                <label><input type="checkbox" id="use-perfect" ${currentPerfect?'checked':''} onchange="renderSmithy()"> 絕對真理 (${player.mats.mat_perfect || 0})</label>
             </div>
+            <p style="font-size:0.85em; color:#666; margin:8px 0 0 0; text-align:center;">* 註：防具 Lv.6 以上失敗會歸零。<br>若勾選「修羅之印」，失敗必降級，防護將失效。</p>
         </div>
-
+        
         ${upgradeHtml}
-        <p style="text-align:center; color:#666; font-size:0.8em; margin-top:10px;">※ 提示：Lv.6 以上強化失敗，靈脈將會崩塌歸零！</p>
     `;
 }
 
