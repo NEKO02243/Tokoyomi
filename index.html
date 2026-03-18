@@ -86,7 +86,7 @@
         .inv-row.rec { border-left-color: var(--quest); }
         .inv-row.mat { border-left-color: var(--mat); }
         .inv-row.oth { border-left-color: var(--cherry); }
-        .inv-row.sp { border-left-color: var(--gold); } /* ✨ 新增：特殊道具金色邊框 */
+        .inv-row.sp { border-left-color: var(--gold); }
         
         .bag-qty-input { background: #000; border: 1px solid #444; color: var(--gold); border-radius: 3px; padding: 4px; width: 45px; text-align: center; margin-left: 5px; box-sizing: border-box; }
         .bag-check { accent-color: var(--gold); transform: scale(1.2); cursor: pointer; }
@@ -211,34 +211,47 @@
 
         <div class="log-inv-tabs">
             <div id="tab-log-btn" class="li-tab active" onclick="switchLogTab('log')">📜 日誌</div>
+            <div id="tab-combat-log-btn" class="li-tab" onclick="switchLogTab('combat')">⚔️ 戰況</div>
             <div id="tab-inv-btn" class="li-tab" onclick="switchLogTab('inv')">🎒 行囊</div>
             <div id="tab-skill-btn" class="li-tab" onclick="switchLogTab('skill')">🌀 秘技</div>
             <div id="tab-helper-btn" class="li-tab" onclick="switchLogTab('helper')">⛩️ 夥伴</div>
         </div>
-        <div id="log" class="li-content-box"></div>
-        
-        <div id="inv-area" class="li-content-box hidden">
-            <div class="inv-filter">
-                <button class="f-btn active" id="fb-all" onclick="setInvFilter('all')">全部</button>
-                <button class="f-btn" id="fb-rec" onclick="setInvFilter('rec')">補給品</button>
-                <button class="f-btn" id="fb-mat" onclick="setInvFilter('mat')">素材</button>
-                <button class="f-btn" id="fb-sp" onclick="setInvFilter('sp')">特殊</button>
-            </div>
-            <div id="inv-list"></div>
-        </div>
-        
-        <div id="skill-area" class="li-content-box hidden" style="padding:10px;">
-            <div class="inv-filter" style="margin-bottom:10px;">
-                <button class="f-btn active" id="sb-all" onclick="setSkillFilter('all')">全部</button>
-                <button class="f-btn" id="sb-init" onclick="setSkillFilter('init')">基礎</button>
-                <button class="f-btn" id="sb-job" onclick="setSkillFilter('job')">流派</button>
-                <button class="f-btn" id="sb-secret" onclick="setSkillFilter('secret')">秘笈</button>
-            </div>
-            <div id="skill-list-content"></div>
-        </div>
 
-        <div id="helper-area" class="li-content-box hidden" style="padding:10px;"></div>
+        <div id="log-inv-content" class="custom-scrollbar" style="flex: 1; overflow-y: auto; padding: 10px; height: 220px; background: #000; border-radius: 0 5px 5px 5px; border: 1px solid #333;">
+            
+            <div id="log" style="min-height: 100%; text-align: left; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px;"></div>
+            
+            <div id="combat-log-wrapper" class="hidden" style="height: 100%; max-height: 100%; display: flex; flex-direction: column;">
+                <div style="text-align: right; margin-bottom: 5px; flex-shrink: 0;">
+                    <button onclick="clearCombatLog()" style="background: rgba(142, 68, 173, 0.6); color: white; border: 1px solid #9b59b6; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85em;">🗑️ 清空畫面</button>
+                </div>
+                <div id="combat-log-area" class="custom-scrollbar" style="flex: 1; min-height: 0; overflow-y: auto; text-align: left; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px;">
+                    <div style="color:#666; font-size:0.9em; text-align:center;">戰鬥尚未開始...</div>
+                </div>
+            </div>
+            
+            <div id="inv-area" class="hidden">
+                <div class="inv-filter">
+                    <button class="f-btn active" id="fb-all" onclick="setInvFilter('all')">全部</button>
+                    <button class="f-btn" id="fb-rec" onclick="setInvFilter('rec')">補給品</button>
+                    <button class="f-btn" id="fb-mat" onclick="setInvFilter('mat')">素材</button>
+                    <button class="f-btn" id="fb-sp" onclick="setInvFilter('sp')">特殊</button>
+                </div>
+                <div id="inv-list"></div>
+            </div>
+            
+            <div id="skill-area" class="hidden" style="padding:10px;">
+                <div class="inv-filter" style="margin-bottom:10px;">
+                    <button class="f-btn active" id="sb-all" onclick="setSkillFilter('all')">全部</button>
+                    <button class="f-btn" id="sb-init" onclick="setSkillFilter('init')">基礎</button>
+                    <button class="f-btn" id="sb-job" onclick="setSkillFilter('job')">流派</button>
+                    <button class="f-btn" id="sb-secret" onclick="setSkillFilter('secret')">秘笈</button>
+                </div>
+                <div id="skill-list-content"></div>
+            </div>
 
+            <div id="helper-area" class="hidden" style="padding:10px;"></div>
+        </div>
         <div style="text-align:center; margin:15px 0 10px 0; display:flex; justify-content:center; align-items:center; gap:15px;">
             <button id="btn-boss" onclick="manualBoss()" disabled class="btn-action" style="background:#ff4757; color:white; padding:8px 20px; font-size:1em;">⚔️ 挑戰 BOSS</button>
             <label style="color:var(--danger); font-size: 0.95em; cursor: pointer; display:flex; align-items:center; gap:5px;">

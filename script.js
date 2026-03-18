@@ -21,6 +21,9 @@ const UPGRADE_RATES = [100, 95, 85, 75, 60, 50, 40, 30, 25, 20, 15, 10, 8, 5, 3]
 let currentSlotKey = "";
 
 const defaultPlayer = {
+sect: null,
+    sectContrib: 0, // ✨ 新增：流派貢獻度
+    sectRank: 0,    // ✨ 新增：流派階級 (對應 0, 1, 2)
     name: "", lvl: 1, exp: 0, next: 30, gold: 0, 
     str: 2, vit: 1, agi: 0, statPoints: 5, 
     lockedStats: { str: 2, vit: 1, agi: 0 },
@@ -89,49 +92,37 @@ function resetInitStats() { player.statPoints = 5; initAllocatedStats = { str: 2
 
 function loadGame() { 
     let s = localStorage.getItem(currentSlotKey); 
+    // 建立基礎模板
     player = JSON.parse(JSON.stringify(defaultPlayer));
     
     if(s) {
         try {
             let sd = JSON.parse(s); 
-            let isDataCorrupted = (sd.gold === null || isNaN(Number(sd.gold))) || (isNaN(Number(sd.lvl)) || sd.lvl < 1) || (isNaN(Number(sd.str)) || isNaN(Number(sd.vit)));
-            if (isDataCorrupted) {
-                let oldLvl = Number(sd.lvl) || 1; if (isNaN(oldLvl)) oldLvl = 1; let compensationGold = (oldLvl * 500) + 2000;
-                player = JSON.parse(JSON.stringify(defaultPlayer)); player.name = sd.name || "重生者"; player.gameVersion = CURRENT_VERSION; player.gold = compensationGold; player.revives = 5;
-                openModal("🌌 時空裂縫修補", `偵測到損毀，已重塑肉身。補償：$${compensationGold.toLocaleString()}，不死御守x5`, "重塑靈魂", () => { saveGame(false); location.reload(); });
-                return; 
-            }
+            if (!sd) throw new Error("存檔為空");
+
+            // 1. 安全合併：先把 sd 覆蓋到 player
+            Object.assign(player, sd); 
+
+            // 2. 深度合併對象：確保物件不會整塊覆蓋
             player.potions = Object.assign({}, defaultPlayer.potions, sd.potions || {}); 
             player.mats = Object.assign({}, defaultPlayer.mats, sd.mats || {}); 
             player.gear = Object.assign({}, defaultPlayer.gear, sd.gear || {});
             player.allocatedStats = Object.assign({str:0, vit:0, agi:0}, sd.allocatedStats || {}); 
             player.buffs = Object.assign({}, sd.buffs || {}); 
-            player.critRate = sd.critRate || 0;
-            player.unlockedSkills = sd.unlockedSkills || []; 
-            player.equippedSkills = sd.equippedSkills || [null, null, null, null];
-            player.skillGambits = sd.skillGambits || [0, 0, 0, 0]; 
-            player.skillGambitValues = sd.skillGambitValues || [50, 50, 50, 50]; 
-            player.skillGambitOps = sd.skillGambitOps || ['<', '<', '<', '<'];
-            
-            player.helperTimes = Object.assign({}, sd.helperTimes || {});
-            player.activeHelper = sd.activeHelper || null;
-            if (sd.helper && sd.helper.id && sd.helper.remainSec > 0 && !player.helperTimes[sd.helper.id]) {
-                player.helperTimes[sd.helper.id] = sd.helper.remainSec;
-                if(!player.activeHelper) player.activeHelper = sd.helper.id;
-            }
-            delete player.helper;
 
-            Object.assign(player, sd); 
-            player.gameVersion = CURRENT_VERSION; player.lockedStats = { str: 2, vit: 1, agi: 0 }; 
-            
-            // ✨ 任務補償機制：如果裝備超過 15 等，發放補償並退回 15 等
+            // 3. 補齊新功能欄位
+            if (player.sect === undefined) player.sect = null;
+            if (player.sectContrib === undefined) player.sectContrib = 0;
+            if (player.sectRank === undefined) player.sectRank = 0;
+
+            // 4. 補償機制：裝備超過 15 等
             let compensated = false;
             let compGold = 0; let compStar = 0;
             ['arms', 'body', 'legs'].forEach(g => {
                 if (player.gear[g] > 15) {
                     let excess = player.gear[g] - 15;
-                    compGold += excess * 50000; // 每超過1級補償 5萬金幣
-                    compStar += excess * 5;     // 每超過1級補償 5顆星砂
+                    compGold += excess * 50000;
+                    compStar += excess * 5;
                     player.gear[g] = 15;
                     compensated = true;
                 }
@@ -139,33 +130,61 @@ function loadGame() {
             if (compensated) {
                 player.gold += compGold;
                 player.mats['wash_star'] = (player.mats['wash_star'] || 0) + compStar;
-                player.mats['mat_perfect'] = (player.mats['mat_perfect'] || 0) + 3; // 額外送3個「絕對真理(100%成功)」
-                setTimeout(() => openModal("⚖️ 天道校準補償", `偵測到您的法器曾突破了凡人極限。<br>因應天道法則，已將您的法器壓制回 <b>Lv.15</b>。<br><br><b>神明賜予了您豐厚的補償：</b><br>💰 金幣 +${compGold.toLocaleString()}<br>✨ 遺忘星砂 x${compStar}<br>🏆 絕對真理(100%成功) x3`, "感謝神明"), 1500);
+                player.mats['mat_perfect'] = (player.mats['mat_perfect'] || 0) + 3;
+                setTimeout(() => openModal("⚖️ 天道校準補償", 
+                    `偵測到您的法器曾突破了凡人極限。<br>已壓制回 <b>Lv.15</b>。<br><br><b>補償：</b><br>💰 金幣 +${compGold.toLocaleString()}<br>✨ 遺忘星砂 x${compStar}<br>🏆 絕對真理 x3`, 
+                    "感謝神明"), 1500);
             }
 
-            if(player.mapIdx >= maps.length) player.mapIdx = maps.length - 1; if(player.maxMapIdx >= maps.length) player.maxMapIdx = maps.length - 1;
+            // 5. 地圖檢查
+            if(player.mapIdx >= maps.length) player.mapIdx = maps.length - 1; 
+            if(player.maxMapIdx >= maps.length) player.maxMapIdx = maps.length - 1;
             if(player.repeatBoss === undefined) player.repeatBoss = false;
-        } catch(e) { player = JSON.parse(JSON.stringify(defaultPlayer)); saveGame(false); }
+
+        } catch(e) { 
+            console.error("載入失敗，但已阻止自動刪檔:", e);
+            // 不覆蓋存檔，保留原始資料
+        }
     }
     
+    // 初始化與檢查
     initPotionSelect();
     if(!player.name || player.name === "") { 
-        el('naming-area').classList.remove('hidden'); resetInitStats();
+        el('naming-area').classList.remove('hidden'); 
+        resetInitStats();
         openModal("踏入輪迴", "名號一旦定下，便與靈魂綁定。", "開啟旅程", () => { 
-            let n = el('player-name-input').value.trim(); if(n === "") n = "無名者"; 
+            let n = el('player-name-input').value.trim(); 
+            if(n === "") n = "無名者"; 
             if(player.statPoints > 0) { el('init-error').style.display = 'block'; return false; }
-            player.name = n; player.str = initAllocatedStats.str; player.vit = initAllocatedStats.vit; player.agi = initAllocatedStats.agi;
+            player.name = n; 
+            player.str = initAllocatedStats.str; 
+            player.vit = initAllocatedStats.vit; 
+            player.agi = initAllocatedStats.agi;
             player.allocatedStats.str = initAllocatedStats.str - 2;
             player.allocatedStats.vit = initAllocatedStats.vit - 1;
             player.allocatedStats.agi = initAllocatedStats.agi - 0;
-            player.lockedStats = { str: 2, vit: 1, agi: 0 }; el('naming-area').classList.add('hidden'); checkSkillUnlocks(); postLoadInit();
+            player.lockedStats = { str: 2, vit: 1, agi: 0 }; 
+            el('naming-area').classList.add('hidden'); 
+            checkSkillUnlocks(); 
+            postLoadInit();
         }); 
-    } else { checkSkillUnlocks(); postLoadInit(); }
+    } else { 
+        checkSkillUnlocks(); 
+        postLoadInit(); 
+    }
 
-    player.gold = Number(player.gold) || 0; player.exp = Number(player.exp) || 0; player.lvl = Number(player.lvl) || 1;
-    player.str = Number(player.str) || 2; player.vit = Number(player.vit) || 1; player.agi = Number(player.agi) || 0;
-    player.mhp = getMaxHP(); if(player.hp > player.mhp) player.hp = player.mhp; 
-    resetCombatState(); updateUI(); 
+    // 數值安全化
+    player.gold = Number(player.gold) || 0; 
+    player.exp = Number(player.exp) || 0; 
+    player.lvl = Number(player.lvl) || 1;
+    player.str = Number(player.str) || 2; 
+    player.vit = Number(player.vit) || 1; 
+    player.agi = Number(player.agi) || 0;
+    player.mhp = getMaxHP(); 
+    if(player.hp > player.mhp) player.hp = player.mhp; 
+
+    resetCombatState(); 
+    updateUI(); 
 }
 
 function postLoadInit() { 
@@ -178,7 +197,7 @@ function postLoadInit() {
     // ✨ 實裝：計算離線時間上限
     let maxOfflineSec = (player.maxOfflineMinutes || 60) * 60; 
 
-    if (offlineSec > 60 && player.mapIdx > 0 && player.hp > 0 && !player.workStartTime) {
+    if (offlineSec > 300 && player.mapIdx > 0 && player.hp > 0 && !player.workStartTime) {
         let m = maps[player.mapIdx];
         if (m && m.mobs.length > 0) {
             let actualOfflineSec = Math.min(offlineSec, maxOfflineSec); // 取實際時間與上限的較小值
@@ -201,7 +220,8 @@ function postLoadInit() {
                 let timeMsg = formatHelperTime(actualOfflineSec);
                 let warningHtml = isCapped ? `<br><span style="color:var(--danger); font-size:0.85em;">(已達掛機上限：${player.maxOfflineMinutes || 60} 分鐘。後續可透過道具擴充)</span>` : "";
                 
-                setTimeout(() => openModal("🌙 離線掛機結算", `妳離開了 ${formatHelperTime(offlineSec)}<br>系統自動為妳修練了 <b style="color:var(--quest);">${timeMsg}</b>${warningHtml}<br><br>斬殺約 ${fakeKills} 隻怪物。<br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`, "領取獎勵"), 1000);
+                // ✨ 補上登入時的自動關閉秒數
+                setTimeout(() => openModal("🌙 離線掛機結算", `妳離開了 ${formatHelperTime(offlineSec)}<br>系統自動為妳修練了 <b style="color:var(--quest);">${timeMsg}</b>${warningHtml}<br><br>斬殺約 ${fakeKills} 隻怪物。<br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`, "領取獎勵", null, false, 6), 1000);
             }
         }
     }
@@ -218,7 +238,7 @@ document.addEventListener("visibilitychange", () => {
         let elapsedSec = Math.floor((Date.now() - lastActiveTime) / 1000);
         let maxOfflineSec = (player.maxOfflineMinutes || 60) * 60; // ✨ 套用上限
 
-        if (elapsedSec > 30 && currentView === 'battle' && !isPaused && !isReviving && player.hp > 0 && !player.workStartTime) {
+        if (elapsedSec > 300 && currentView === 'battle' && !isPaused && !isReviving && player.hp > 0 && !player.workStartTime) {
             let actualElapsedSec = Math.min(elapsedSec, maxOfflineSec);
             let isCapped = elapsedSec > maxOfflineSec;
 
@@ -242,7 +262,8 @@ document.addEventListener("visibilitychange", () => {
                     popMsg += `<br><br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`;
 
                     log(`🌙 【掛機結算】神遊了 ${formatHelperTime(elapsedSec)}，有效結算 ${timeMsg}。斬殺 ${fakeKills} 隻怪物，獲得 ${expEarned} 經驗, ${goldEarned} 金幣。`, "var(--gold)");
-                    setTimeout(() => openModal("🌙 掛機結算", popMsg, "領取"), 500);
+                    // ✨ 呼叫不暫停且 3 秒自動關閉的彈窗 (參數 6 是 autoCloseSec，也就是 6 秒)
+                    setTimeout(() => openModal("🌙 掛機結算", popMsg, "領取", null, false, 6), 500);
                 }
             }
         }
@@ -306,7 +327,13 @@ function validateEquippedSkills() {
 }
 
 function equipSkill(sid) { 
-    let emptyIdx = player.equippedSkills.indexOf(null); 
+let sk = skillDB[sid];
+    if (sk.cat === 'job' && sk.rank > player.sectRank) {
+        return openModal("層次不足", `此秘傳武學需要達到【${SECT_DB[player.sect].ranks[sk.rank]}】位階方可領悟！`, "了解");
+    }
+
+    let emptyIdx = player.equippedSkills.indexOf(null);
+   
     if(emptyIdx !== -1) { 
         player.equippedSkills[emptyIdx] = sid; player.skillGambits[emptyIdx] = 0; player.skillGambitValues[emptyIdx] = 50; player.skillGambitOps[emptyIdx] = '<'; 
         combatState.slotSetupCds[emptyIdx] = 10.0;
@@ -451,20 +478,27 @@ function executeSkill(slotIdx) {
     let sk = skillDB[sid]; combatState.skillCds[slotIdx] = sk.cd; 
     let isDummy = player.mapIdx === 0; let finalDmg = 0;
     
-    if(sid === 'vit_strike') { 
+   if(sid === 'vit_strike') { 
         let d = getMatkVal() * 8.0; 
         if(isDummy) { finalDmg = d; } else { finalDmg = Math.max(1, (d - (monster.defVal || 0)/2)) * (1 - (monster.dr || 0)); }
         finalDmg = Math.floor(finalDmg); if(isDummy) combatState.zenDmgAccum += finalDmg; else monster.hp -= finalDmg; 
         combatState.mobAtkTimer += 1.5;
         showDmg('m-box', finalDmg, sk.color); showDmg('m-box', "[暈眩]", '#e1b12c'); showDmg('p-box', "【靈氣爆發】", sk.color); 
+        
+        // ✨ 加入詳細日誌
+        writeCombatLog(`🌀 <span style="color:#4a90e2">${player.name||"妳"}</span> 施放了 <b style="color:${sk.color}">【靈氣爆發】</b>，對 <span style="color:#e74c3c">${monster.name}</span> 造成 <b style="color:white">${finalDmg}</b> 點傷害並附帶暈眩！`);
     } 
     else if(sid === 'str_cleave') { 
         let d = Math.floor(getAtkVal() * 2.5); 
         finalDmg = d; 
         if(isDummy) combatState.zenDmgAccum += finalDmg; else monster.hp -= finalDmg; 
         showDmg('m-box', finalDmg, sk.color); showDmg('p-box', "【蓄力】", sk.color); 
+        
+        // ✨ 加入詳細日誌
+        writeCombatLog(`💥 <span style="color:#4a90e2">${player.name||"妳"}</span> 施放了 <b style="color:${sk.color}">【蓄力】</b>，對 <span style="color:#e74c3c">${monster.name}</span> 造成 <b style="color:white">${finalDmg}</b> 點傷害！`);
     }
-   
+    
+    return true;
 }
 
 let lastTickTime = Date.now();
@@ -546,29 +580,64 @@ function startBattleLoop() {
             if (finalDmg < minDmg) finalDmg = minDmg;
 
             if (isCrit) finalDmg = Math.floor(finalDmg * 1.5);
-            
+            let triggeredPoison = false;
+            let triggeredWind = false;
             // ✨ 猛毒刃觸發判定
-            if (hasPassive('agi_combo1') && Math.random() < 0.15) {
+           if (hasPassive('agi_combo1') && Math.random() < 0.15) {
                 monster.poisoned = 4.0; 
-                monster.poisonTick = 1.0; // 觸發瞬間立刻跳第一次毒傷，讓玩家立刻有感
-                showDmg('m-box', "毒刃附著", '#2ecc71'); 
+                monster.poisonTick = 1.0; 
+                triggeredPoison = true;
             }
             
             // ✨ 優化 3：風刃 (加入專屬的視覺跳字)
             if (hasPassive('agi_combo2') && Math.random() < 0.20) {
                 let windDmg = Math.floor(baseAtk * 0.5 + getSpdVal() * 1.0);
                 finalDmg += windDmg; 
-                showDmg('m-box', "風刃 +" + windDmg, '#81ecec'); // 明確跳出青色文字，告訴玩家風刃切了多少血
+                triggeredWind = true;
             }
             
             if (finalDmg <= 0) { finalDmg = 0; if(Math.random() < 0.05) log(`[警告] 攻擊無法穿透敵方護甲，傷害為 0！`, "#888"); }
 
-            if (isDummy) { combatState.zenDmgAccum += finalDmg; showDmg('m-box', finalDmg===0 ? '0' : finalDmg, finalDmg===0 ? '#666' : (isCrit?'#ffeb3b':'white'));
+            if (isDummy) { 
+                combatState.zenDmgAccum += finalDmg; 
+                showDmg('m-box', finalDmg===0 ? '0' : finalDmg, finalDmg===0 ? '#666' : (isCrit?'#ffeb3b':'white'));
             } else if(monster.hp > 0) { 
-                monster.hp -= finalDmg; 
+                monster.hp -= finalDmg;
+
+// ✨ 把忍者判定加在這裡！只要命中，強制把血量歸零
+                if (combatState.isNinjaEvent && monster.id === 'm_raven_trial') {
+                    monster.hp = 0; 
+                }
+
+
+                
+                // 💥 第 1 段：普攻跳字與日誌
                 showDmg('m-box', finalDmg===0 ? '0' : finalDmg, finalDmg===0 ? '#666' : (isCrit?'#ffeb3b':'white')); 
+                let dmgTxt = isCrit ? `<b style="color:#ffeb3b">爆擊！${finalDmg}</b>` : `<b style="color:white">${finalDmg}</b>`;
+                writeCombatLog(`🗡️ <span style="color:#4a90e2">${player.name||"妳"}</span> 發動 <b style="color:#aaa">普攻</b>，對 <span style="color:#e74c3c">${monster.name}</span> 造成 ${dmgTxt} 點傷害。`);
+
+                // 🌪️ 第 2 段：風刃跳字與日誌 (延遲 150 毫秒)
+                if (triggeredWind) {
+                    setTimeout(() => {
+                        showDmg('m-box', "風刃", '#81ecec');
+                        writeCombatLog(`🌪️ <span style="color:#4a90e2">${player.name||"妳"}</span> 觸發 <b style="color:#81ecec">風刃</b>，追加了撕裂傷害！`);
+                    }, 150);
+                }
+                
+                // 🐍 第 3 段：毒刃跳字與日誌 
+                if (triggeredPoison) {
+                    let delay = triggeredWind ? 300 : 150;
+                    setTimeout(() => {
+                        showDmg('m-box', "毒刃附著", '#2ecc71');
+                        writeCombatLog(`🐍 <span style="color:#4a90e2">${player.name||"妳"}</span> 觸發 <b style="color:#2ecc71">毒刃</b>，使 <span style="color:#e74c3c">${monster.name}</span> 陷入猛毒狀態！`);
+                    }, delay);
+                }
             }
-        } else { showDmg('m-box', "MISS", '#888'); }
+        } else { 
+            // 💨 閃避跳字與日誌
+            showDmg('m-box', "MISS", '#888'); 
+            writeCombatLog(`💨 <span style="color:#4a90e2">${player.name||"妳"}</span> 的攻擊被 <span style="color:#e74c3c">${monster.name}</span> <b style="color:#888">閃避</b> 了！`);
+        }
     }
 
     if(player.activeHelper && HELPER_DB[player.activeHelper]) {
@@ -605,10 +674,24 @@ function startBattleLoop() {
                         showDmg('m-box', `反制 ${refDmg}`, '#e1b12c'); 
                     }
                     player.hp -= mDmg; showDmg('p-box', mDmg===0 ? '0' : mDmg, mDmg===0?'#888':'#ff4757');
-                } else { showDmg('p-box', "MISS", 'skyblue'); }
-            }
+                } else { 
+                    showDmg('p-box', "MISS", 'skyblue'); 
+                    // ✨ 忍者試煉：計算閃避次數
+                    if (combatState.isNinjaEvent) {
+        combatState.ninjaTimer -= tickSec;
+        if (combatState.ninjaTimer <= 0) {
+            combatState.isNinjaEvent = false;
+            log("🦅 渡鴉：「時間到了... 妳太慢了。」試煉失敗！", "var(--danger)");
+            openModal("試煉失敗", "妳未能在 60 秒內擊中渡鴉。", "返回");
+            spawn(false);
+            return;
         }
     }
+                    }
+                }
+            }
+        }
+    
 
     if(player.hp <= 0) handleDeath(); 
     updateUI(); battleTimer = setTimeout(startBattleLoop, delay);
@@ -620,6 +703,26 @@ function handleZenComplete() {
 }
 
 function handleVictory() {
+    // ✨ 忍者試煉成功判定
+    if (combatState.isNinjaEvent) {
+        combatState.isNinjaEvent = false;
+        log("🦅 渡鴉：「不錯的反應。這卷軸歸妳了，別讓我失望。」", "var(--quest)");
+        addItemToBag('mat_ninja_scroll', 1);
+        if(typeof showToast === 'function') showToast("✨ 獲得：暗號卷軸", "var(--quest)");
+        spawn(false);
+        return;
+    }
+
+    // ✨ 武士試煉連戰邏輯
+   if (combatState.isSamuraiTrial && monster.id === 'm_trial_bandit_boss') {
+        combatState.isSamuraiTrial = false;
+        log("🗡️ 妳在決鬥中勝出！惡徒倒下，妳奪回了【染血的太刀】。", "var(--quest)");
+        addItemToBag('mat_samurai_proof', 1);
+        if(typeof showToast === 'function') showToast("✨ 獲得：染血的太刀", "var(--quest)");
+        spawn(false);
+        return;
+    }
+
     let m = maps[player.mapIdx]; let dbMob = MOB_DB[monster.id]; if(!m || !dbMob) return;
     let expGained = (Number(dbMob.exp) || 0); let goldGained = (Number(dbMob.gold) || 0);
     
@@ -666,11 +769,20 @@ function handleVictory() {
 }
 
 function addItemToBag(id, qty) { let item = getItem(id); if(item.cat === 'rec') { if(!player.potions[id]) player.potions[id] = 0; player.potions[id] += qty; } else if(item.cat === 'mat' || item.cat === 'sp' || item.cat === 'oth') { if(!player.mats[id]) player.mats[id] = 0; player.mats[id] += qty; } }
-function resetCombatState() { combatState = { mobAtkTimer: 2.0, skillCds: [0, 0, 0, 0], slotSetupCds: [0, 0, 0, 0], zenTimer: 0, zenDmgAccum: 0, potionCd: 0, helperSkillCd: 0, nextHitCrit: false }; }
+function resetCombatState() { 
+    // 使用 Object.assign 保留原有的試煉進度 (isSamuraiTrial 等)
+    combatState = Object.assign(combatState || {}, { mobAtkTimer: 2.0, skillCds: [0, 0, 0, 0], slotSetupCds: [0, 0, 0, 0], zenTimer: 0, zenDmgAccum: 0, potionCd: 0, helperSkillCd: 0, nextHitCrit: false }); 
+}
 
 function handleDeath() { 
     if(player.revives > 0) { player.revives--; log("🛡️ 替身御札發效！靈魂回歸肉身。", "var(--gold)"); player.hp = getMaxHP(); updateUI(); return; } 
-    log(`💀 魂火熄滅... 正在等待靈魂重塑。`, "var(--danger)"); player.hp = 0; isReviving = true; resetCombatState(); 
+    log(`💀 魂火熄滅... 正在等待靈魂重塑。`, "var(--danger)"); player.hp = 0; isReviving = true; if (combatState.isSamuraiTrial || combatState.isNinjaEvent) {
+        combatState.isSamuraiTrial = false;
+        combatState.isNinjaEvent = false;
+        log("⚠️ 試煉失敗！劍之介：「這點能耐也敢逞強... 失敗了就從頭來過吧。」", "var(--danger)");
+    }resetCombatState(); 
+
+
     if(monster.isBoss) { player.autoBoss = false; log("⚠️ 首領戰敗北，自動挑戰已關閉。", "var(--danger)"); setTimeout(() => spawn(false), 500); } 
     let sec = 5; const ov = el('revive-timer-overlay'); const txt = el('revive-seconds'); if(ov) ov.classList.remove('hidden'); if(txt) txt.innerText = sec; 
     const timer = setInterval(() => { 
@@ -1050,11 +1162,42 @@ function applyGM() {
     player.lvl = parseInt(el('gm-lvl').value) || 1; player.gold = parseInt(el('gm-gold').value) || 0; 
     player.str = parseInt(el('gm-str').value) || 2; player.vit = parseInt(el('gm-vit').value) || 1; 
     player.agi = parseInt(el('gm-agi').value) || 0; player.statPoints = parseInt(el('gm-pts').value) || 0; 
-    player.hp = getMaxHP(); updateUI(); checkSkillUnlocks(); 
-    log('🛠️ 神明特權：各項數值已重新校準。', 'var(--gm)'); 
-    if(typeof showToast === 'function') showToast("✅ 數值套用成功", "var(--gm)");
-}
+    player.hp = getMaxHP(); 
+    
+    // ✨ GM 神明特權：強制切換流派
+    let selectedSect = el('gm-sect').value;
+    if (selectedSect !== (player.sect || "")) {
+        // 1. 如果原本有流派，把舊流派的技能從身上「拔除」
+        if (player.sect && SECT_DB[player.sect]) {
+            let oldSkills = SECT_DB[player.sect].skills;
+            player.unlockedSkills = player.unlockedSkills.filter(sid => !oldSkills.includes(sid));
+            // 同時從已經裝備的格子裡卸下
+            for(let i=0; i<4; i++) {
+                if(oldSkills.includes(player.equippedSkills[i])) {
+                    player.equippedSkills[i] = null;
+                    player.skillGambits[i] = 0;
+                    combatState.skillCds[i] = 0;
+                    combatState.slotSetupCds[i] = 0;
+                }
+            }
+        }
+        
+        // 2. 寫入新流派
+        player.sect = selectedSect === "" ? null : selectedSect;
+        
+        // 3. 如果選擇了新流派，直接「灌頂」學會該流派所有技能
+        if (player.sect && SECT_DB[player.sect]) {
+            if (!player.unlockedSkills) player.unlockedSkills = [];
+            SECT_DB[player.sect].skills.forEach(sid => {
+                if (!player.unlockedSkills.includes(sid)) player.unlockedSkills.push(sid);
+            });
+        }
+    }
 
+    updateUI(); checkSkillUnlocks(); 
+    log('🛠️ 神明特權：各項數值與流派已重新校準。', 'var(--gm)'); 
+    if(typeof showToast === 'function') showToast("✅ 數值與流派套用成功", "var(--gm)");
+}
 function gmUnlockMaps() {
     player.maxMapIdx = maps.length - 1; 
     if(typeof updateMapSelector === 'function') updateMapSelector(); 
@@ -1115,13 +1258,14 @@ function startCasino(isAllIn) {
         if (casinoState.dealerTotal === 21) { casinoState.msg = "🤝 雙方 Blackjack，平手退回本金！"; player.gold += casinoState.bet; }
         else { let win = isAllIn ? (casinoState.bet * 4) : Math.floor(casinoState.bet * 2.5); casinoState.msg = `🔥 Blackjack！神仙難救！狂賺 ${win.toLocaleString()} 金幣！`; player.gold += win; }
         casinoState.gameOver = true; updateUI();
+        saveGame(false);
     }
     if(typeof renderCasino === 'function') renderCasino();
 }
 
 function hitCasino() {
     casinoState.playerCards.push(casinoState.deck.pop()); casinoState.playerTotal = calcCards(casinoState.playerCards);
-    if (casinoState.playerTotal > 21) { casinoState.msg = "💥 爆牌 (Bust)！籌碼被老闆娘笑納了。"; casinoState.gameOver = true; updateUI(); }
+    if (casinoState.playerTotal > 21) { casinoState.msg = "💥 爆牌 (Bust)！籌碼被老闆娘笑納了。"; casinoState.gameOver = true; updateUI(); saveGame(false);}
     if(typeof renderCasino === 'function') renderCasino();
 }
 
@@ -1140,14 +1284,14 @@ function raiseCasino() {
     player.gold -= addAmt; casinoState.bet += addAmt; updateUI();
     casinoState.playerCards.push(casinoState.deck.pop()); casinoState.playerTotal = calcCards(casinoState.playerCards);
     
-    if (casinoState.playerTotal > 21) { casinoState.msg = "💥 加碼後爆牌！血本無歸。"; casinoState.gameOver = true; updateUI(); } 
+    if (casinoState.playerTotal > 21) { casinoState.msg = "💥 加碼後爆牌！血本無歸。"; casinoState.gameOver = true; updateUI();saveGame(false); } 
     else { casinoState.msg = `💰 成功加注 $${addAmt.toLocaleString()}！(總注 $${casinoState.bet.toLocaleString()})`; }
     if(typeof renderCasino === 'function') renderCasino();
 }
 
 function surrenderCasino() {
     let back = Math.floor(casinoState.bet * 0.5); player.gold += back;
-    casinoState.msg = `🏳️ 投降輸一半。退回 ${back.toLocaleString()} 金幣。`; casinoState.gameOver = true; updateUI(); if(typeof renderCasino === 'function') renderCasino();
+    casinoState.msg = `🏳️ 投降輸一半。退回 ${back.toLocaleString()} 金幣。`; casinoState.gameOver = true; updateUI();saveGame(false); if(typeof renderCasino === 'function') renderCasino();
 }
 
 function checkCasinoWinner() {
@@ -1156,8 +1300,250 @@ function checkCasinoWinner() {
     else if (pt > dt) { let win = casinoState.bet * (casinoState.isAllIn ? 3 : 2); casinoState.msg = `🎉 點數壓制！贏得 ${win.toLocaleString()} 金幣！`; player.gold += win; }
     else if (pt < dt) { casinoState.msg = `💸 莊家點數較大，籌碼沒收。`; }
     else { casinoState.msg = `🤝 平手，退回押注金。`; player.gold += casinoState.bet; }
-    casinoState.gameOver = true; updateUI(); if(typeof renderCasino === 'function') renderCasino();
+    casinoState.gameOver = true; updateUI(); saveGame(false);if(typeof renderCasino === 'function') renderCasino();
 }
+
+// --- ✨ 流派系統：拜師入門 ---
+function joinSect(sectId, reqItemId) {
+    if (player.lvl < 50) return typeof showToast === 'function' ? showToast("等級不足 50，宗門不予受理。", "var(--danger)") : null;
+    if ((player.mats[reqItemId] || 0) <= 0) return typeof showToast === 'function' ? showToast("缺少入門信物！", "var(--danger)") : null;
+
+    // 1. 扣除信物
+    player.mats[reqItemId]--;
+    
+    // 2. 記錄玩家的流派
+player.sect = sectId;
+    player.sectRank = 0; // 確保從 0 階開始
+    let sectData = SECT_DB[sectId];
+    
+    // 3. 解鎖流派專屬技能
+    sectData.skills.forEach(sid => {
+        let sk = skillDB[sid];
+        if (sk && sk.rank === 0 && !player.unlockedSkills.includes(sid)) {
+            player.unlockedSkills.push(sid);
+        }
+    });
+
+    // 4. 彈出拜師成功的超帥氣提示
+    log(`⛩️ 【系統】恭喜！妳已正式拜入【${sectData.name}】！專屬秘技已解鎖。`, "var(--quest)");
+    openModal("🎉 拜師成功", 
+        `<b style="color:var(--gold);">${sectData.leaderNPC}</b>：「從今天起，妳就是我【${sectData.name}】的弟子了。切記，不可辱沒了宗門的名聲！」<br><br><span style="color:var(--quest); font-size:0.9em;">（已解鎖流派專屬被動與主動技能，請至右側秘技介面查看與裝備）</span>`, 
+        "弟子明白"
+    );
+    
+    updateUI();
+    if (typeof renderSect === 'function') renderSect();
+    saveGame(false);
+}
+
+// --- 預留的叛宗函數 (避免點擊報錯) ---
+function promptBetraySect() {
+    openModal("🩸 叛離宗門", "叛宗系統尚未開放。一日為師，終身為父，妳還是再考慮一下吧！", "知道了");
+}
+
+
+// --- ⛩️ 流派養成系統：上繳與晉升核心 ---
+
+// 1. 彈出上繳物資的介面
+function promptContribute() {
+    let matIds = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6'];
+    let html = `<p style="font-size:0.9em; color:#aaa;">上繳不用的妖物素材，可以提升宗門貢獻度。</p>
+                <div style="max-height:200px; overflow-y:auto; background:rgba(0,0,0,0.3); padding:10px; border-radius:5px; margin-bottom:15px;">`;
+    
+    let hasAny = false;
+    matIds.forEach(mid => {
+        let count = player.mats[mid] || 0;
+        if (count > 0) {
+            hasAny = true;
+            let item = getItem(mid);
+            // 設定貢獻值：m0=1, m1=2, m2=5, m3=10, m4=20, m5=40, m6=100 (妳可以隨時微調)
+            let values = { m0:1, m1:2, m2:5, m3:10, m4:20, m5:40, m6:100 };
+            let val = values[mid];
+            html += `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #333; padding-bottom:5px;">
+                    <span style="color:var(--mat);">${item.name} (擁有 ${count})</span>
+                    <button class="btn-action" style="padding:4px 10px; font-size:0.8em;" onclick="doContribute('${mid}', ${val})">上繳 (貢獻+${val})</button>
+                </div>`;
+        }
+    });
+    
+    if (!hasAny) html += `<p style="color:#666; text-align:center;">行囊中目前沒有可上繳的素材。</p>`;
+    html += `</div>`;
+    
+    openModal("🎁 宗門資助", html, "關閉");
+}
+
+// 2. 執行上繳動作
+function doContribute(mid, val) {
+    if ((player.mats[mid] || 0) <= 0) return;
+    
+    player.mats[mid]--;
+    player.sectContrib += val;
+    
+    showToast(`🎁 上繳成功！貢獻度 +${val}`, "var(--quest)");
+    
+    // 檢查是否達到晉升標準
+    checkSectRankUp();
+    
+    updateUI();
+    if (typeof renderSect === 'function') renderSect(); // 刷新宗門大廳畫面
+    promptContribute(); // 重新打開上繳視窗，方便連續點擊
+}
+
+// 3. 晉升判定
+function checkSectRankUp() {
+    let s = SECT_DB[player.sect];
+    if (!s) return;
+    
+    let nextRank = player.sectRank + 1;
+    let req = s.reqContrib[nextRank];
+    
+    // 如果還有下一階，且貢獻度達標
+    if (req !== undefined && player.sectContrib >= req) {
+        player.sectRank = nextRank;
+        
+        // 晉升時的華麗演出
+        log(`🎊 恭喜！妳在【${s.name}】中的位階提升為：【${s.ranks[nextRank]}】！`, "var(--gold)");
+        openModal("🎊 宗門晉升", 
+            `<b style="color:var(--gold);">${s.leaderNPC}</b>：「做得好。妳對宗門的貢獻大家有目共睹，從今天起，妳正式晉升為 <b style="color:var(--quest);">【${s.ranks[nextRank]}】</b> 位階！更多的流派武學已對妳開放。」`, 
+            "領受榮耀"
+        );
+        
+        // 自動解鎖該階級可學的技能
+        s.skills.forEach(sid => {
+            let sk = skillDB[sid];
+            if (sk.rank <= player.sectRank && !player.unlockedSkills.includes(sid)) {
+                player.unlockedSkills.push(sid);
+                log(`✨ 晉升獎勵：學會了流派武學【${sk.name}】！`, "var(--quest)");
+            }
+        });
+        
+        saveGame(false);
+    }
+}
+
+// --- 🗡️ 武士流派：任務引導 ---
+function startSamuraiTrial() {
+    if (player.lvl < 50) return showToast("劍之介：「實力不足者，去了也只是送死。」", "var(--danger)");
+
+    openModal("⚔️ 劍之介的委託", 
+        "劍之介：「本門的太刀被一名叛逃的惡徒偷走了，他現在就躲在後山。去吧，找到他，進行一對一的對決，把刀帶回來。」<br><br><span style='color:var(--gold);'>目標：在一對一的決鬥中擊敗【盜匪大頭目】。</span>", 
+        "接受決鬥！", 
+        () => {
+            switchView('battle');
+            combatState.isSamuraiTrial = true;
+            
+            // ✨ 直接刷出 Boss，不打小兵了！
+            monster = JSON.parse(JSON.stringify(MOB_DB['m_trial_bandit_boss']));
+            resetCombatState();
+            let btn = el('btn-boss'); if(btn) btn.disabled = true;
+            log("🗡️ 妳找到了惡徒，雙方拔刀相向，一觸即發！", "var(--danger)");
+        }, 
+        true
+    );
+}
+
+// --- 🌸 神道流派：任務引導 ---
+function startShintoTrial() {
+    openModal("⛩️ 禰宜 柊的指引", 
+        `柊：「神明只庇佑虔誠之人。當妳在神社的【累積奉納】達到 10 萬金幣時，神德商店便會賜予妳入職必備的<b>【神恩注連繩】</b>。目前妳已奉納：${player.shrineDonation.toLocaleString()} 金幣。」`, 
+        "了解"
+    );
+}
+
+// --- ✨ 忍者流派：主動發起影之考驗 ---
+function startNinjaTrial() {
+    if (player.lvl < 50) return showToast("渡鴉：「妳的氣息太過混亂，Lv.50 後再來找我。」", "var(--danger)");
+    
+    openModal("🦅 渡鴉的考驗", 
+        "渡鴉：「夜叉不收平庸之輩。我不會還手，但在這片黑影中，妳若能在 60 秒內擊中我的衣角一次，我便承認妳的資質。」<br><br><span style='color:var(--gold);'>目標：在 60 秒內成功對渡鴉造成 1 次傷害（渡鴉擁有 99% 閃避）。</span>", 
+        "影之試煉，開始", 
+        () => {
+            switchView('battle');
+            combatState.isNinjaEvent = true; 
+            combatState.ninjaTimer = 60.0; // 倒數 60 秒
+            
+            monster = JSON.parse(JSON.stringify(MOB_DB['m_raven_trial']));
+            let btn = el('btn-boss'); if(btn) btn.disabled = true;
+            log("🦅 渡鴉融入了陰影：「來吧，捉住我的影子。」", "var(--accent)");
+        }, 
+        true
+    );
+}
+
+// --- ⛩️ 宗門養成：上繳物資與階級晉升指令 ---
+
+// 1. 彈出上繳介面
+function promptContribute() {
+    let matIds = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6'];
+    let html = `<p style="font-size:0.9em; color:#aaa;">上繳妖物素材來提升宗門貢獻度。</p>
+                <div style="max-height:200px; overflow-y:auto; background:rgba(0,0,0,0.3); padding:10px; border-radius:5px; margin-bottom:15px;">`;
+    
+    let hasAny = false;
+    matIds.forEach(mid => {
+        let count = player.mats[mid] || 0;
+        if (count > 0) {
+            hasAny = true;
+            let item = getItem(mid);
+            // 貢獻值權重：等級越高加越多
+            let values = { m0:1, m1:2, m2:5, m3:10, m4:20, m5:40, m6:100 };
+            let val = values[mid];
+            html += `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #333; padding-bottom:5px;">
+                    <span style="color:var(--mat);">${item.name} (持有 ${count})</span>
+                    <button class="btn-action" style="padding:4px 10px; font-size:0.8em;" onclick="doContribute('${mid}', ${val})">上繳 (+${val})</button>
+                </div>`;
+        }
+    });
+    
+    if (!hasAny) html += `<p style="color:#666; text-align:center;">行囊中目前沒有可上繳的素材。</p>`;
+    html += `</div>`;
+    
+    openModal("🎁 宗門資助", html, "關閉");
+}
+
+// 2. 執行上繳
+function doContribute(mid, val) {
+    if ((player.mats[mid] || 0) <= 0) return;
+    player.mats[mid]--;
+    player.sectContrib += val;
+    showToast(`🎁 上繳成功！貢獻度 +${val}`, "var(--quest)");
+    
+    checkSectRankUp(); // 檢查是否晉升
+    updateUI();
+    if (typeof renderSect === 'function') renderSect(); // 刷新大廳畫面
+    promptContribute(); // 保持視窗開啟方便連續點擊
+}
+
+// 3. 晉升判定與自動領悟
+function checkSectRankUp() {
+    let s = SECT_DB[player.sect];
+    if (!s) return;
+    
+    let nextRank = player.sectRank + 1;
+    let req = s.reqContrib[nextRank];
+    
+    if (req !== undefined && player.sectContrib >= req) {
+        player.sectRank = nextRank;
+        log(`🎊 恭喜！妳在【${s.name}】中的位階提升為：【${s.ranks[nextRank]}】！`, "var(--gold)");
+        
+        openModal("🎊 宗門晉升", 
+            `<b style="color:var(--gold);">${s.leaderNPC}</b>：「做得好。妳的貢獻大家有目共睹，從今天起，妳正式晉升為 <b style="color:var(--quest);">【${s.ranks[nextRank]}】</b> 位階！」`, 
+            "領受榮耀"
+        );
+        
+        // 晉升後自動解鎖該階級的新技能
+        s.skills.forEach(sid => {
+            let sk = skillDB[sid];
+            if (sk.rank <= player.sectRank && !player.unlockedSkills.includes(sid)) {
+                player.unlockedSkills.push(sid);
+                log(`✨ 晉升獎勵：領悟了武學【${sk.name}】！`, "var(--quest)");
+            }
+        });
+        saveGame(false);
+    }
+}
+
 
 window.onload = () => { 
     initSlotScreen(); 

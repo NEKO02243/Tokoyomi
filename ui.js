@@ -74,13 +74,26 @@ else if(s === 'smith_shop') renderSmithyShop();
             <button class="btn-action" style="width:100%; background:#e67e22;" onclick="promptImportCode()">📥 輸入引繼碼 (覆蓋此紀錄)</button>`;
     }
     else if(s === 'gm') {
+        // ✨ 動態生成流派選單
+        let sectOpts = `<option value="">無流派</option>`;
+        if (typeof SECT_DB !== 'undefined') {
+            for(let key in SECT_DB) {
+                sectOpts += `<option value="${key}" ${player.sect === key ? 'selected' : ''}>${SECT_DB[key].name}</option>`;
+            }
+        }
+
         c.innerHTML = `<h3>🛠️ 神明特權</h3>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px; text-align:left; font-size:0.9em; color:white;">
                 <div>等級: <input type="number" id="gm-lvl" value="${player.lvl}" style="width:60px;"></div><div>金幣: <input type="number" id="gm-gold" value="${player.gold}" style="width:60px;"></div>
                 <div>力量: <input type="number" id="gm-str" value="${player.str}" style="width:60px;"></div><div>體質: <input type="number" id="gm-vit" value="${player.vit}" style="width:60px;"></div>
                 <div>敏捷: <input type="number" id="gm-agi" value="${player.agi}" style="width:60px;"></div><div>點數: <input type="number" id="gm-pts" value="${player.statPoints}" style="width:60px;"></div>
             </div>
-            <button class="btn-action" style="width:100%; margin-bottom:10px; background:var(--gm);" onclick="applyGM()">✅ 套用數值</button>
+            
+            <div style="margin-bottom:15px; text-align:left; font-size:0.95em; color:var(--gm);">
+                強制切換流派: <select id="gm-sect" style="width:130px; background:#000; color:white; border:1px solid var(--gm); padding:3px;">${sectOpts}</select>
+            </div>
+
+            <button class="btn-action" style="width:100%; margin-bottom:10px; background:var(--gm);" onclick="applyGM()">✅ 套用數值與流派</button>
             <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--accent);" onclick="gmUnlockMaps()">🗺️ 解鎖全部地圖</button>
             <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--mat);" onclick="gmAddMats()">🎁 +100 全素材</button>`;
     }
@@ -109,13 +122,34 @@ function updateMapSelector() {
     }
 }
 
+// --- 切換右側面板 ---
 function switchLogTab(type) {
     currentLogTab = type;
-    el('tab-log-btn').classList.toggle('active', type === 'log'); el('tab-inv-btn').classList.toggle('active', type === 'inv'); 
-    el('tab-skill-btn').classList.toggle('active', type === 'skill'); el('tab-helper-btn').classList.toggle('active', type === 'helper'); 
-    el('log').classList.toggle('hidden', type !== 'log'); el('inv-area').classList.toggle('hidden', type !== 'inv'); 
-    el('skill-area').classList.toggle('hidden', type !== 'skill'); el('helper-area').classList.toggle('hidden', type !== 'helper'); 
-    if(type === 'inv') renderBag(); if(type === 'skill') renderPath(); if(type === 'helper') renderHelper();
+    
+    // 1. 切換按鈕的高亮狀態 (加上戰況按鈕)
+    el('tab-log-btn').classList.toggle('active', type === 'log'); 
+    if(el('tab-combat-log-btn')) el('tab-combat-log-btn').classList.toggle('active', type === 'combat'); 
+    el('tab-inv-btn').classList.toggle('active', type === 'inv'); 
+    el('tab-skill-btn').classList.toggle('active', type === 'skill'); 
+    el('tab-helper-btn').classList.toggle('active', type === 'helper'); 
+    
+    // 2. 切換面板的顯示與隱藏 (加上戰況面板)
+    el('log').classList.toggle('hidden', type !== 'log'); 
+    if(el('combat-log-wrapper')) el('combat-log-wrapper').classList.toggle('hidden', type !== 'combat');
+    el('inv-area').classList.toggle('hidden', type !== 'inv'); 
+    el('skill-area').classList.toggle('hidden', type !== 'skill'); 
+    el('helper-area').classList.toggle('hidden', type !== 'helper'); 
+    
+    // 3. 渲染對應的內容
+    if(type === 'inv') renderBag(); 
+    if(type === 'skill') renderPath(); 
+    if(type === 'helper') renderHelper();
+    
+    // 4. ✨ 當玩家點開戰況時，自動把捲軸滾到最下面看最新的傷害
+    if(type === 'combat') {
+    let cl = el('combat-log-area'); // 這裡維持 area 不用動！
+     if (cl) cl.scrollTop = 0; 
+    }
 }
 
 function setInvFilter(cat) { currentInvFilter = cat; document.querySelectorAll('.f-btn').forEach(b => b.classList.remove('active')); el(`fb-${cat}`).classList.add('active'); renderBag(); }
@@ -207,27 +241,46 @@ function renderBag() {
 }
 
 function renderPath() {
-    const c = el('skill-list-content'); if(!c) return;
-    let filteredSkills = player.unlockedSkills.filter(sid => { if(currentSkillFilter === 'all') return true; return (skillDB[sid] && skillDB[sid].cat === currentSkillFilter); });
+    const c = el('skill-list-content'); 
+    if(!c) return;
+
+    let filteredSkills = player.unlockedSkills.filter(sid => { 
+        if(currentSkillFilter === 'all') return true; 
+        return (skillDB[sid] && skillDB[sid].cat === currentSkillFilter); 
+    });
 
     let html = `<div style="display:flex; flex-direction:column; gap:8px; text-align:left;">`;
-    if(filteredSkills.length === 0) { html += `<div style="color:#666; text-align:center; padding: 20px;">尚無此類別的秘技...</div>`; } 
-    else {
+    if(filteredSkills.length === 0) { 
+        html += `<div style="color:#666; text-align:center; padding: 20px;">尚無此類別的秘技...</div>`; 
+    } else {
         filteredSkills.forEach(sid => {
-            let sk = skillDB[sid]; let isEqIdx = player.equippedSkills.indexOf(sid); let isEq = isEqIdx !== -1;
-            let isValid = isSkillValid(sid);
+            let sk = skillDB[sid]; 
+            let isEqIdx = player.equippedSkills.indexOf(sid); 
+            let isEq = isEqIdx !== -1;
+            
+            // ✨ 分開判定：屬性是否達標？位階是否達標？
+            let isStatValid = isSkillValid(sid);
+            let isRankValid = (sk.cat !== 'job' || (player.sectRank >= sk.rank));
+            let isValid = isStatValid && isRankValid;
+
             let boxBg = isValid ? '#1a1a2e' : '#111';
             let borderColor = isValid ? (sk.type === 'active' ? 'var(--skill)' : 'var(--passive)') : '#333';
             let nameColor = isValid ? sk.color : '#555';
             let descColor = isValid ? '#ddd' : '#555';
             
+            // ✨ 動態改變按鈕文字
             let btnAction = isEq ? `unequipSkill(${isEqIdx})` : (isValid ? `equipSkill('${sid}')` : ``); 
-            let btnText = isEq ? '卸下' : (isValid ? '裝備' : '🔒 不足');
+            let btnText = isEq ? '卸下' : (isValid ? '裝備' : (!isRankValid ? '🔒 位階不足' : '🔒 屬性不足'));
             let btnColor = isEq ? 'var(--danger)' : (isValid ? 'var(--quest)' : '#222'); 
             let btnFontColor = isEq ? '#fff' : (isValid ? '#000' : '#555');
 
-            if (isEq && combatState.slotSetupCds[isEqIdx] > 0) { btnColor = '#444'; btnFontColor = '#888'; btnText = '調息中'; }
+            if (isEq && combatState.slotSetupCds[isEqIdx] > 0) { 
+                btnColor = '#444'; 
+                btnFontColor = '#888'; 
+                btnText = '調息中'; 
+            }
 
+            // ✨ 戰術選項
             let tacticHtml = "";
             if (isEq && sk.type === 'active' && isValid) {
                 let i = isEqIdx;
@@ -235,24 +288,42 @@ function renderPath() {
                     <div style="margin-top:10px; border-top:1px dashed #444; padding-top:10px; display:flex; gap:8px; align-items:center;">
                         <span style="font-size:0.9em; color:#aaa;">戰術:</span>
                         <select style="flex:1; font-size:0.9em; background:#000; color:white; border:1px solid #666; padding:4px;" onchange="updateGambit(${i}, this.value)">
-                            <option value="0" ${player.skillGambits[i]==0?'selected':''}>始終施放</option><option value="3" ${player.skillGambits[i]==3?'selected':''}>僅對首領</option>
-                            <option value="4" ${player.skillGambits[i]==4?'selected':''}>我方 HP</option><option value="5" ${player.skillGambits[i]==5?'selected':''}>敵方 HP</option>
+                            <option value="0" ${player.skillGambits[i]==0?'selected':''}>始終施放</option>
+                            <option value="3" ${player.skillGambits[i]==3?'selected':''}>僅對首領</option>
+                            <option value="4" ${player.skillGambits[i]==4?'selected':''}>我方 HP</option>
+                            <option value="5" ${player.skillGambits[i]==5?'selected':''}>敵方 HP</option>
                         </select>`;
-                if(player.skillGambits[i] >= 4) { tacticHtml += `<span style="cursor:pointer; background:#333; color:var(--gold); padding:2px 8px; border-radius:3px; user-select:none;" onclick="toggleGambitOp(${i})">${player.skillGambitOps[i] === '<' ? '&lt;' : '&gt;'}</span><input type="number" value="${player.skillGambitValues[i]}" style="width:50px; background:#000; color:white; border:1px solid #555; text-align:center;" onchange="updateGambitVal(${i}, this.value)"> %`; }
+                if(player.skillGambits[i] >= 4) { 
+                    tacticHtml += `<span style="cursor:pointer; background:#333; color:var(--gold); padding:2px 8px; border-radius:3px; user-select:none;" onclick="toggleGambitOp(${i})">${player.skillGambitOps[i] === '<' ? '&lt;' : '&gt;'}</span>
+                    <input type="number" value="${player.skillGambitValues[i]}" style="width:50px; background:#000; color:white; border:1px solid #555; text-align:center;" onchange="updateGambitVal(${i}, this.value)"> %`; 
+                }
                 tacticHtml += `</div>`;
             }
             
+            // ✨ 動態錯誤提示
             let reqWarn = "";
             if (!isValid) {
                 let rTxt = [];
-                for(let s in sk.req) if(player[s] < sk.req[s]) rTxt.push(`${s.toUpperCase()}需${sk.req[s]}`);
-                reqWarn = `<div style="color:var(--danger); font-size:0.8em; margin-top:5px;">⚠️ 體魄衰退：${rTxt.join(", ")}</div>`;
+                if (!isStatValid) {
+                    for(let s in sk.req) if(player[s] < sk.req[s]) rTxt.push(`${s.toUpperCase()}需${sk.req[s]}`);
+                }
+                if (!isRankValid) {
+                    let sData = SECT_DB && SECT_DB[player.sect];
+                    let rankName = sData && sData.ranks ? sData.ranks[sk.rank] : "未知位階";
+                    rTxt.push(`宗門位階需達【${rankName}】`);
+                }
+                reqWarn = `<div style="color:var(--danger); font-size:0.8em; margin-top:5px;">⚠️ 限制：${rTxt.join(" / ")}</div>`;
             }
 
             html += `
             <div style="background:${boxBg}; padding:12px; border-left:4px solid ${borderColor}; border-radius:6px; position:relative;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div><b style="color:${nameColor}; font-size:1.1em;">${sk.name}</b><span style="font-size:0.85em; color:#888; margin-left:8px;">${isEq ? `(裝備於第 ${isEqIdx+1} 槽)` : ''}</span><br><small style="color:${descColor}; font-size:0.95em;">${sk.desc}</small>${reqWarn}</div>
+                    <div>
+                        <b style="color:${nameColor}; font-size:1.1em;">${sk.name}</b>
+                        <span style="font-size:0.85em; color:#888; margin-left:8px;">${isEq ? `(裝備於第 ${isEqIdx+1} 槽)` : ''}</span><br>
+                        <small style="color:${descColor}; font-size:0.95em;">${sk.desc}</small>
+                        ${reqWarn}
+                    </div>
                     <button id="btn-path-${sid}" class="btn-action" style="padding:6px 15px; font-size:0.95em; background:${btnColor}; color:${btnFontColor}; border-radius:4px;" ${!isValid && !isEq ? 'disabled' : ''} onclick="${btnAction}">${btnText}</button>
                 </div>${tacticHtml}
             </div>`;
@@ -260,6 +331,11 @@ function renderPath() {
     }
     c.innerHTML = html + `</div>`;
 }
+
+
+
+
+
 
 // ✨ V0.7.2 夥伴編隊大改版：清單過濾、詳細資料與大面板切換
 function renderHelper() {
@@ -662,13 +738,117 @@ function renderCasino() {
 }
 
 function renderSect() {
-    el('sub-content').innerHTML = `<h3>⚔️ 流派門徑</h3>
-        <div style="background:#111; padding:20px; border-radius:8px; border:1px solid #333; text-align:center;">
-            <p style="color:var(--cherry); font-size:1.1em; font-style:italic; line-height:1.6;">「宗主大人目前閉關修行，<br>暫時不方便見客，請過一陣子再來探訪。」</p>
-            <p style="color:#666; font-size:0.85em; margin-top:15px;">（流派轉職與階級系統籌備中）</p>
-        </div>`;
+    const c = el('sub-content'); 
+    if(!c) return;
+
+    if (!player.sect) {
+        let sectHtml = "";
+        const reqItems = { 'samurai': 'mat_samurai_proof', 'ninja': 'mat_ninja_scroll', 'shinto': 'mat_shinto_rope' };
+        
+        for (let key in SECT_DB) {
+            let s = SECT_DB[key]; let reqItemId = reqItems[key];
+            let hasItem = (player.mats[reqItemId] || 0) > 0;
+            let isLvlOk = player.lvl >= 50;
+            
+            // ✨ 忍者試煉改為「主動發起」
+let actionBtn = "";
+            if (key === 'ninja' && !hasItem) {
+                // 🦅 忍者：維持妳要求的渡鴉試煉
+                actionBtn = `<button class="btn-action" style="width:100%; background:var(--accent); color:black;" onclick="startNinjaTrial()">🦅 向渡鴉請求「影之考驗」</button>`;
+            } 
+            else if (key === 'samurai' && !hasItem) {
+                // 提示去打關卡
+                actionBtn = `<button class="btn-action" style="width:100%; background:#444; color:#aaa;" onclick="startSamuraiTrial()">⚔️ 詢問如何獲得信物</button>`;
+            }
+            else if (key === 'shinto' && !hasItem) {
+                // 提示去奉納
+                actionBtn = `<button class="btn-action" style="width:100%; background:#444; color:#aaa;" onclick="startShintoTrial()">⛩️ 詢問如何獲得信物</button>`;
+            }
+            else {
+                // 已持有信物時，顯示原本的入門按鈕
+                actionBtn = `<button class="btn-action" style="width:100%; background:${(isLvlOk && hasItem)?'var(--quest)':'#444'}; color:${(isLvlOk && hasItem)?'black':'#888'};" ${!(isLvlOk && hasItem)?'disabled':''} onclick="joinSect('${key}', '${reqItemId}')">
+                    ${hasItem ? '呈上信物，請求入門' : `🔒 需 Lv.50 以上`}
+                </button>`;
+            }
+
+            sectHtml += `
+                <div class="item-row" style="flex-direction:column; align-items:flex-start; padding:15px; margin-bottom:12px; background:rgba(0,0,0,0.5);">
+                    <div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-bottom:8px;">
+                        <b style="color:white; font-size:1.1em;">${s.name} <span style="font-size:0.8em; color:var(--gold);">(${s.roleName})</span></b>
+                        <button style="background:none; border:1px solid #666; color:#888; font-size:0.75em; cursor:pointer; padding:2px 5px;" onclick="openModal('${s.guideNPC}的指引', '${s.joinHint}', '了解')">❓ 打聽情報</button>
+                    </div>
+                    <div style="font-size:0.9em; color:#aaa; margin-bottom:10px;">${s.desc}</div>
+                    ${actionBtn}
+                </div>`;
+        }
+        c.innerHTML = `<h3>⚔️ 流派門徑</h3>${sectHtml}`;
+        return;
+    }
+
+    // 狀態 2：已有流派 (日系宗門大廳)
+    let s = SECT_DB[player.sect];
+    let rankName = s.ranks[player.sectRank];
+    let nextRankReq = s.reqContrib[player.sectRank + 1] || null;
+    let contribPct = nextRankReq ? Math.min(100, (player.sectContrib / nextRankReq) * 100) : 100;
+
+    // 渲染技能列表 (根據階級鎖定)
+    let skillRows = "";
+    s.skills.forEach(sid => {
+        let sk = skillDB[sid];
+        let isLocked = player.sectRank < sk.rank;
+        skillRows += `
+            <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:5px; margin-bottom:5px; border-left:3px solid ${isLocked?'#444':sk.color};">
+                <div style="display:flex; justify-content:space-between; font-size:0.9em;">
+                    <b style="color:${isLocked?'#555':sk.color};">${isLocked ? '🔒 秘傳武學' : sk.name}</b>
+                    <span style="font-size:0.8em; color:#888;">等級: Lv.1 (開發中)</span>
+                </div>
+                <div style="font-size:0.8em; color:${isLocked?'#444':'#aaa'};">${isLocked ? `需達到【${s.ranks[sk.rank]}】位階方可領悟` : sk.desc}</div>
+            </div>`;
+    });
+
+    c.innerHTML = `
+        <div style="background:linear-gradient(180deg, #1a1a2e, #0a0a0f); border:1px solid var(--quest); border-radius:10px; padding:15px; margin-bottom:15px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div><b style="color:var(--gold); font-size:1.2em;">${s.name}</b><br><span style="color:var(--quest);">位階：【${rankName}】</span></div>
+                <div style="text-align:right;"><small style="color:#888;">宗門貢獻度</small><br><b style="color:white;">${player.sectContrib}</b></div>
+            </div>
+            ${nextRankReq ? `
+            <div class="bar-bg" style="height:8px; margin-bottom:5px;"><div class="exp-fill" style="width:${contribPct}%;"></div></div>
+            <div style="text-align:center; font-size:0.75em; color:#888;">晉升【${s.ranks[player.sectRank+1]}】進度: ${player.sectContrib} / ${nextRankReq}</div>
+            ` : `<div style="text-align:center; color:var(--gold); font-size:0.85em;">★ 已達到流派巔峰 ★</div>`}
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px;">
+            <button class="btn-action" style="background:#222; color:var(--mat); border:1px solid var(--mat);" onclick="promptContribute()">🎁 上繳物資</button>
+            <button class="btn-action" style="background:#222; color:var(--cherry); border:1px solid var(--cherry);" onclick="promptSectQuest()">📜 羈絆委託</button>
+        </div>
+
+        <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:8px;">
+            <h4 style="margin:0 0 10px 0; color:#888; font-size:0.9em; border-bottom:1px solid #333; padding-bottom:5px;">⛩️ 秘笈參悟室</h4>
+            ${skillRows}
+        </div>
+        
+        <button class="btn-action" style="width:100%; margin-top:15px; background:#444; color:white;" onclick="backToVillage()">← 返回村莊</button>
+    `;
 }
 
+// 上繳物資 
+function promptContribute() {
+    // 呼叫 script.js 裡的邏輯
+    if (typeof window.promptContribute === 'function') {
+        window.promptContribute();
+    } else {
+        showToast("系統載入中，請稍候...", "var(--gold)");
+    }
+}
+
+// 羈絆委託暫時維持提示，這是我們下一次更新的重點！
+function promptSectQuest() {
+    let s = SECT_DB[player.sect];
+    openModal("📜 羈絆委託", `目前的位階【${s.ranks[player.sectRank]}】尚無可接取的特殊任務。<br><br><span style="color:#888;">(提示：繼續提升貢獻度至最高位階，解鎖小師妹與大巫女的連環故事)</span>`, "了解");
+}
+// 預留函數：羈絆任務 (這就是妳說的連環故事起點)
+function promptSectQuest() { showToast("【！羈絆】目前尚無新的委託。", "var(--cherry)"); }
 function renderShrine() {
     const c = el('sub-content'); if(!c) return;
     player.shrineDonation = player.shrineDonation || 0;
@@ -733,7 +913,7 @@ function renderShrineShop() {
     const c = el('sub-content'); if(!c) return;
     let currentDonation = player.shrineDonation || 0;
     
-    let shrineItems = ['s_omikuji', 's_ema', 's_omiki', 's_hamaya', 'revive'];
+    let shrineItems = ['s_omikuji', 's_ema', 's_omiki', 's_hamaya', 'revive', 'mat_shinto_rope'];
     let shopHtml = shrineItems.map(id => {
         let item = getItem(id);
         let isUnlocked = currentDonation >= item.reqDonation;
@@ -782,12 +962,23 @@ function renderShrineShop() {
 }
 
 function updateUI() {
-    if(el('p-name')) el('p-name').innerText = player.name || "無名者"; if(el('p-display-name')) el('p-display-name').innerText = player.name || "無名者"; if(el('p-lvl')) el('p-lvl').innerText = player.lvl; if(el('p-gold')) el('p-gold').innerText = player.gold.toLocaleString();
+    if(el('p-name')) el('p-name').innerText = player.name || "無名者"; 
+    if(el('p-display-name')) el('p-display-name').innerText = player.name || "無名者"; 
+    if(el('p-lvl')) el('p-lvl').innerText = player.lvl; 
+    if(el('p-gold')) el('p-gold').innerText = player.gold.toLocaleString();
+    
+    // ✨ 在這裡安插：更新頂部面板的流派名稱
+    if(el('p-path-text')) {
+        let sectName = (player.sect && typeof SECT_DB !== 'undefined' && SECT_DB[player.sect]) ? SECT_DB[player.sect].name : "無";
+        el('p-path-text').innerText = sectName;
+        el('p-path-text').style.color = player.sect ? "var(--quest)" : "var(--cherry)";
+    }
+
     ['str','vit','agi'].forEach(s => { if(el(`p-${s}-val`)) el(`p-${s}-val`).innerText = player[s]; if(el(`stat-${s}`)) el(`stat-${s}`).innerText = player[s]; if(el(`pre-${s}`)) el(`pre-${s}`).innerText = statPreview[s] > 0 ? `+${statPreview[s]}` : ""; });
     
     if(el('stat-points')) { el('stat-points').innerText = player.statPoints; if (player.statPoints > 0) el('stat-points').classList.add('glow-pts'); else el('stat-points').classList.remove('glow-pts'); }
     if(el('alloc-btns')) el('alloc-btns').classList.toggle('hidden', (statPreview.str + statPreview.vit + statPreview.agi) === 0);
-
+ 
     let curAtk = getAtkVal(); 
     let curMatk = getMatkVal(); 
     let curSpd = Math.max(0.25, 1.5 / (1 + player.agi * 0.008)).toFixed(2); 
@@ -908,7 +1099,34 @@ function updateStatHints() {
     hintEl.innerText = targetMsg;
 }
 
-function showDmg(tid, txt, col) { const b = el(tid); if(!b) return; const e = document.createElement('div'); e.className='dmg-text'; e.innerText=txt; e.style.color=col; b.appendChild(e); setTimeout(()=>e.remove(), 800); }
+// --- 1. 畫面上飄浮的數字 (恢復原本單純的功能) ---
+function showDmg(tid, txt, col) { 
+    try {
+        const b = el(tid); if(!b) return; 
+        const e = document.createElement('div'); e.className='dmg-text'; e.innerText=txt; e.style.color=col; b.appendChild(e); 
+        setTimeout(()=>e.remove(), 800); 
+    } catch(err) {}
+}
+
+// --- 2. ✨ 全新的「敘事型」戰鬥日誌寫入器 ---
+function writeCombatLog(htmlMsg) {
+    try {
+        const cl = el('combat-log-area');
+        if (!cl) return;
+        if (cl.innerHTML.includes("戰鬥尚未開始")) cl.innerHTML = "";
+        
+        let logLine = `<div style="font-size:0.9em; padding:5px 5px; border-bottom:1px solid rgba(255,255,255,0.05); line-height:1.5; color:#ccc;">${htmlMsg}</div>`;
+        
+        // ✨ 改變 1：'afterbegin' 代表把新的文字插在最上方
+        cl.insertAdjacentHTML('afterbegin', logLine);
+        
+        // ✨ 改變 2：因為最舊的文字會被擠到最下面，所以超過 40 行時，要刪掉「最後一個 (last)」
+        if (cl.children.length > 40) cl.lastElementChild.remove(); 
+        
+        // ✨ 改變 3：讓捲軸永遠停留在最上方，不用往下滾
+        if (typeof currentLogTab !== 'undefined' && currentLogTab === 'combat') cl.scrollTop = 0; 
+    } catch(err) {}
+}
 function log(m, color = "#888") { const l = el('log'); if(l) l.innerHTML = `<span style="color:${color}; font-size:1.05em;">> ${m}</span><br>` + l.innerHTML; }
 
 function showToast(msg, color = "var(--gold)") {
@@ -933,11 +1151,57 @@ function showToast(msg, color = "var(--gold)") {
     setTimeout(() => toast.remove(), 2500);
 }
 
-function openModal(t,b,bt,cb,showCancel=false) { 
-    isPaused=true; let titleEl = el('modal-title'); if(titleEl) titleEl.innerText=t; let bodyEl = el('modal-body'); if(bodyEl) bodyEl.innerHTML=b;
-    const btn=el('modal-confirm-btn'); if(btn) btn.innerText=bt; const cBtn=el('modal-cancel-btn'); if(cBtn) cBtn.style.display=showCancel?'block':'none';
-    let isMainMenu = false; let slotScreen = el('slot-screen'); if(slotScreen) isMainMenu = !slotScreen.classList.contains('hidden');
-    if(btn) btn.onclick=()=>{ if(cb && cb() === false) return; let gm = el('game-modal'); if(gm) gm.style.display='none'; if(!isMainMenu) { isPaused=false; if(currentView==='battle' && !player.workStartTime) startBattleLoop(); } };
-    if(cBtn) cBtn.onclick=()=>{ let gm = el('game-modal'); if(gm) gm.style.display='none'; if(!isMainMenu) { isPaused=false; if(currentView==='battle' && !player.workStartTime) startBattleLoop(); } };
-    let gm = el('game-modal'); if(gm) gm.style.display='flex'; 
+// ✨ 升級版 openModal (支援不暫停與自動關閉)
+function openModal(t, b, bt, cb, showCancel = false, autoCloseSec = 0) { 
+    // 如果沒有設定自動關閉，才暫停遊戲
+    if (autoCloseSec === 0) isPaused = true; 
+    
+    let titleEl = el('modal-title'); if(titleEl) titleEl.innerText=t; 
+    let bodyEl = el('modal-body'); if(bodyEl) bodyEl.innerHTML=b;
+    const btn = el('modal-confirm-btn'); if(btn) btn.innerText=bt; 
+    const cBtn = el('modal-cancel-btn'); if(cBtn) cBtn.style.display = showCancel ? 'block' : 'none';
+    
+    let isMainMenu = false; 
+    let slotScreen = el('slot-screen'); 
+    if(slotScreen) isMainMenu = !slotScreen.classList.contains('hidden');
+    
+    let closeModal = () => {
+        let gm = el('game-modal'); if(gm) gm.style.display = 'none'; 
+        if(!isMainMenu && autoCloseSec === 0) { 
+            isPaused = false; 
+            if(currentView === 'battle' && !player.workStartTime) startBattleLoop(); 
+        }
+    };
+
+    if(btn) btn.onclick = () => { if(cb && cb() === false) return; closeModal(); };
+    if(cBtn) cBtn.onclick = () => { closeModal(); };
+    
+    let gm = el('game-modal'); if(gm) gm.style.display = 'flex'; 
+
+    // ✨ 如果有設定自動關閉，就啟動倒數計時
+    if (autoCloseSec > 0) {
+        let timeLeft = autoCloseSec;
+        if(btn) btn.innerText = `${bt} (${timeLeft}s)`;
+        
+        let timer = setInterval(() => {
+            timeLeft--;
+            if (gm.style.display === 'none') { clearInterval(timer); return; } // 如果玩家提早按掉了就清除
+            if(btn) btn.innerText = `${bt} (${timeLeft}s)`;
+            
+            if (timeLeft <= 0) {
+                clearInterval(timer);
+                if (gm.style.display !== 'none') {
+                    if(cb) cb(); // 執行回調函數(例如領取獎勵)
+                    closeModal();
+                }
+            }
+        }, 1000);
+    }
+}
+
+function clearCombatLog() {
+    const cl = el('combat-log-area');
+    if(cl) {
+        cl.innerHTML = '<div style="color:#666; font-size:0.9em; text-align:center;">戰鬥尚未開始...</div>';
+    }
 }

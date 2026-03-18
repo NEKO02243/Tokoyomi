@@ -10,12 +10,15 @@ const EFFECT_MAP = {
 };
 
 const ITEM_DB = {
+// --- 補品類型道具 ---
     'p1': { id: 'p1', cat: 'rec', name: '生鮮野味', tag: '+50HP', cost: 15, value: 50, rate: 0, sellable: true, sellPrice: 3, shopAvailable: false, shopTab: 'rec', desc: '野外獲得的生肉，口感欠佳。' },
     'p2': { id: 'p2', cat: 'rec', name: '醃製獸肉', tag: '+250HP', cost: 60, value: 250, rate: 0, sellable: true, sellPrice: 20, shopAvailable: true, shopTab: 'rec', desc: '萬屋特製的乾肉，補給量較高。' },
     'p5': { id: 'p5', cat: 'rec', name: '百年靈芝', tag: '+800HP', cost: 400, value: 800, rate: 0, sellable: true, sellPrice: 150, shopAvailable: true, shopTab: 'rec', desc: '深山中採摘的靈藥，能迅速恢復大量體力。' },
     'p3': { id: 'p3', cat: 'rec', name: '行軍丸子', tag: '恢復30%', cost: 300, value: 0, rate: 0.3, sellable: true, sellPrice: 100, shopAvailable: true, shopTab: 'rec', desc: '專業配方煉製的補給，效果顯著。' },
     'p6': { id: 'p6', cat: 'rec', name: '妖血秘藥', tag: '+2500HP', cost: 1500, value: 2500, rate: 0, sellable: true, sellPrice: 400, shopAvailable: true, shopTab: 'rec', desc: '以大妖之血煉製，能瞬間恢復極大生命值。' },
     'p4': { id: 'p4', cat: 'rec', name: '天照御神露', tag: '全恢復', cost: 3000, value: 0, rate: 1.0, sellable: true, sellPrice: 1000, shopAvailable: true, shopTab: 'rec', desc: '傳說中的神水，完全恢復。' },
+
+// --- 素材類型道具 ---
     
     'm0': { id: 'm0', cat: 'mat', name: '妖化鐵砂', sellable: true, sellPrice: 2, shopAvailable: false, shopTab: 'mat', desc: '受妖氣侵蝕的細砂，鍛造基礎素材。' },
     'm1': { id: 'm1', cat: 'mat', name: '竹妖的韌皮', sellable: true, sellPrice: 5, shopAvailable: false, shopTab: 'mat', desc: '竹妖身上最堅韌的部分，用於強化法器。' },
@@ -36,9 +39,9 @@ const ITEM_DB = {
     'mat_hammer_high': { id: 'mat_hammer_high', cat: 'sp', name: '神匠之錘', cost: 3000, sellable: false, sellPrice: 0, shopAvailable: false, shopTab: 'smith', desc: '【輔助】強化時提升 25% 成功機率。' },
     'mat_gambler': { id: 'mat_gambler', cat: 'sp', name: '修羅之印', cost: 1200, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'smith', desc: '【特殊】若強化成功，有 50% 機率連升 2 級；若失敗則必定降 1 級。' },
     'mat_perfect': { id: 'mat_perfect', cat: 'sp', name: '絕對真理', cost: 10000, sellable: false, sellPrice: 0, shopAvailable: false, shopTab: 'smith', desc: '【神物】無視機率，必定強化成功。' },
-
-
-
+'sp_samurai_scroll': { id: 'sp_samurai_scroll', cat: 'sp', name: '繪卷：天才小師妹・櫻', sellable: false, sellPrice: 0, desc: '【羈絆】呼喚小師妹永久加入陣容，提供極高的攻擊與破甲支援。' },
+    'sp_ninja_scroll': { id: 'sp_ninja_scroll', cat: 'sp', name: '繪卷：暗部忍犬・疾風', sellable: false, sellPrice: 0, desc: '【羈絆】呼喚忍犬永久加入陣容，提供閃避與掉寶率加成。' },
+    'sp_shinto_scroll': { id: 'sp_shinto_scroll', cat: 'sp', name: '繪卷：大巫女・千早', sellable: false, sellPrice: 0, desc: '【羈絆】呼喚大巫女永久加入陣容，提供生命恢復與神聖護盾。' },
 
     'wash_star': { id: 'wash_star', cat: 'sp', name: '遺忘星砂', tag: '洗點', cost: 10, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'oth', desc: '神秘的星砂。可在行囊中使用，精準洗退 1 點手動分配的屬性點。' },
     'c_shrine': { id: 'c_shrine', cat: 'sp', name: '神德代幣', tag: '信仰', cost: 0, sellable: false, sellPrice: 0, shopAvailable: false, shopTab: 'oth', desc: '奉納後獲得的神明恩賜，可用於兌換特殊物資。' },
@@ -46,8 +49,27 @@ const ITEM_DB = {
     's_ema': { id: 's_ema', cat: 'sp', name: '祈願絵馬', effect: 'gold_boost', duration: 1800, cost: 2, reqDonation: 5000, sellable: false, sellPrice: 0, shopAvailable: false, desc: '寫滿願望的木牌。使用後 30 分鐘內，金幣掉落增加。' },
     's_omiki': { id: 's_omiki', cat: 'sp', name: '御神酒', effect: 'exp_boost', duration: 1800, cost: 2, reqDonation: 5000, sellable: false, sellPrice: 0, shopAvailable: false, desc: '神明賜福的清酒。使用後 30 分鐘內，經驗值獲取增加。' },
     's_hamaya': { id: 's_hamaya', cat: 'sp', name: '破魔矢', effect: 'atk_boost', duration: 900, cost: 3, reqDonation: 10000, sellable: false, sellPrice: 0, shopAvailable: false, desc: '破除邪惡的神箭。使用後 15 分鐘內，物理攻擊威力增加。' },
-    'revive': { id: 'revive', cat: 'sp', name: '替身御札', tag: '免死一次', cost: 5, reqDonation: 20000, sellable: false, sellPrice: 0, shopAvailable: false, desc: '蘊含強大靈力的護身符。持有時自動生效，抵擋一次致命傷害。' }
+    'revive': { id: 'revive', cat: 'sp', name: '替身御札', tag: '免死一次', cost: 5, reqDonation: 20000, sellable: false, sellPrice: 0, shopAvailable: false, desc: '蘊含強大靈力的護身符。持有時自動生效，抵擋一次致命傷害。' },
+// --- ⚔️ 流派入門信物 (轉職道具) ---
+    'mat_shinto_rope': { 
+        id: 'mat_shinto_rope', cat: 'sp', name: '神恩注連繩', 
+        cost: 10, reqDonation: 100000, sellable: false, sellPrice: 0, 
+        desc: '【神道信物】充滿神性的注連繩。可在神社以 10 枚代幣兌換（需累積奉納達 10 萬）。' 
+    },
+    'mat_samurai_proof': { 
+        id: 'mat_samurai_proof', cat: 'sp', name: '染血的太刀', 
+        sellable: false, sellPrice: 0, 
+        desc: '【武士信物】山賊頭目的佩刀，證明了妳的武勇。' 
+    },
+    'mat_ninja_scroll': { 
+        id: 'mat_ninja_scroll', cat: 'sp', name: '暗號卷軸', 
+        sellable: false, sellPrice: 0, 
+        desc: '【忍者信物】通過渡鴉試煉後獲得的神秘卷軸。' 
+    },
 };
+
+
+
 
 const HELPER_DB = {
     'h1': { id: 'h1', role: 'phy', roleName: '武術', name: '流浪浪人・伍丸', cost: 300, duration: 30, skillType: 'attack', skillVal: 15, skillCd: 6, passive: (p) => { return { atk: 3, def: 0, eva: 0 }; }, workBonus: { rate: 1.2, label: "護衛：工錢提升 20%" }, desc: '追求劍道的浪人。增加基礎攻擊 3 點，每 6 秒施放一次斬擊（15點真實傷害）。' },
@@ -81,19 +103,89 @@ const MOB_DB = {
     'b_yomi': { name: '黃泉衛士', hp: 25000, atk: 120, defVal: 80, dr: 0.35, eva: 15, agi: 90, exp: 6000, gold: 3000, isBoss: true, drops: [{id:'p4', chance:0.60}, {id:'mat_yomi', chance:1.0}] },
     'm_hag': { name: '三途川奪衣婆', hp: 6500, atk: 90, defVal: 60, dr: 0.30, eva: 30, agi: 110, exp: 600, gold: 250, drops: [{id:'p6', chance:0.20}, {id:'m6', chance:0.15}] },
     'm_wheel': { name: '業火車', hp: 8000, atk: 110, defVal: 70, dr: 0.32, eva: 15, agi: 80, exp: 750, gold: 300, drops: [{id:'m6', chance:0.20}, {id:'m0', chance:0.20}] },
-    'b_sanzu': { name: '冥河擺渡人', hp: 60000, atk: 180, defVal: 100, dr: 0.40, eva: 25, agi: 150, exp: 15000, gold: 8000, isBoss: true, drops: [{id:'p4', chance:1.0}, {id:'m6', chance:1.0}] }
+    'b_sanzu': { name: '冥河擺渡人', hp: 60000, atk: 180, defVal: 100, dr: 0.40, eva: 25, agi: 150, exp: 15000, gold: 8000, isBoss: true, drops: [{id:'p4', chance:1.0}, {id:'m6', chance:1.0}] },
+    // ✨ 新增武士試煉 Boss
+    'b_bandit': { name: '山賊頭目', hp: 35000, atk: 140, defVal: 80, dr: 0.25, eva: 10, agi: 60, exp: 8000, gold: 4000, isBoss: true, drops: [{id:'mat_samurai_proof', chance:1.0}] },
+'m_spider': { name: '絡新婦', hp: 9000, atk: 130, defVal: 70, dr: 0.30, eva: 40, agi: 160, exp: 1100, gold: 380, drops: [{id:'p6', chance:0.20}, {id:'m6', chance:0.20}] },
+    'm_oni': { name: '狂暴赤鬼', hp: 12000, atk: 160, defVal: 85, dr: 0.35, eva: 10, agi: 100, exp: 1200, gold: 400, drops: [{id:'p6', chance:0.25}, {id:'m6', chance:0.20}] },
+    'b_shuten': { name: '酒吞童子', hp: 100000, atk: 280, defVal: 140, dr: 0.45, eva: 30, agi: 200, exp: 25000, gold: 12000, isBoss: true, drops: [{id:'p4', chance:1.0}, {id:'m6', chance:1.0}] },
+    
+    // ✨ 新增常規關卡 2：無間奈落
+    'm_gozu': { name: '牛頭獄卒', hp: 20000, atk: 240, defVal: 120, dr: 0.40, eva: 15, agi: 120, exp: 2200, gold: 600, drops: [{id:'p4', chance:0.10}, {id:'m6', chance:0.30}] },
+    'm_mezu': { name: '馬面獄卒', hp: 18000, atk: 260, defVal: 110, dr: 0.38, eva: 25, agi: 180, exp: 2200, gold: 600, drops: [{id:'p4', chance:0.10}, {id:'m6', chance:0.30}] },
+    'b_enma': { name: '閻魔大王', hp: 250000, atk: 450, defVal: 200, dr: 0.50, eva: 40, agi: 250, exp: 50000, gold: 25000, isBoss: true, drops: [{id:'p4', chance:1.0}, {id:'mat_perfect', chance:0.05}] },
+// 🗡️ 武士試煉專用：強盜小弟與首領
+    'm_trial_bandit': { 
+        id: 'm_trial_bandit', name: '【試煉】囂張的盜匪', 
+        hp: 10, mhp: 10, lvl: 1, atk: 0, defVal: 0, dr: 0, eva: 0, agi: 0, exp: 0, gold: 0, poisoned: 0, drops: [] 
+    },
+    'm_trial_bandit_boss': { 
+        id: 'm_trial_bandit_boss', name: '【試煉】盜匪大頭目', 
+        hp: 2500, mhp: 2500, lvl: 50, 
+        atk: 45, defVal: 15, dr: 0, eva: 5, agi: 25, exp: 0, gold: 0, isBoss: true, poisoned: 0, 
+        drops: [{id:'mat_samurai_proof', chance:1.0}]
+    },
+
+    // 🥷 忍者試煉專用：引路人 渡鴉
+    'm_raven_trial': {
+        id: 'm_raven_trial', name: '【試煉】引路人 渡鴉', 
+        hp: 999999, mhp: 999999, lvl: 99, // ✨ 補上 mhp 與 lvl
+        atk: 0, defVal: 999, dr: 0.95, eva: 99, agi: 500, exp: 0, gold: 0, isBoss: true, poisoned: 0, 
+        drops: [] 
+    },
+
+
 };
 
 const maps = [
     { name: "[修行] 幽靜道場", minLvl: 1, maxLvl: 999, mobs: ["m_dummy"], rareMob: null, boss: null },
-    { name: "[補給] 靜謐荒野", minLvl: 1, maxLvl: 5, mobs: ["m_rabbit", "m_fox_cub"], boss: "b_wolf", rareMob: {id: "r_gold_rabbit", chance: 0.05} },
+    { name: "靜謐荒野", minLvl: 1, maxLvl: 5, mobs: ["m_rabbit", "m_fox_cub"], boss: "b_wolf", rareMob: {id: "r_gold_rabbit", chance: 0.05} },
     { name: "遺忘的竹林", minLvl: 1, maxLvl: 9, mobs: ["m_dog", "m_bamboo"], boss: "b_lion", rareMob: null },
     { name: "靜謐之森", minLvl: 10, maxLvl: 19, mobs: ["m_tengu", "m_yama"], boss: "b_spirit", rareMob: null },
     { name: "伏見古道", minLvl: 20, maxLvl: 29, mobs: ["m_fox", "m_umbrella"], boss: "b_inari", rareMob: null },
     { name: "鳴神大社殘跡", minLvl: 30, maxLvl: 39, mobs: ["m_thunder", "m_bird"], boss: "b_tengu", rareMob: null },
     { name: "黃泉平坂．入口", minLvl: 40, maxLvl: 49, mobs: ["m_ghoul", "m_skel"], boss: "b_yomi", rareMob: null }, 
-    { name: "三途川畔", minLvl: 50, maxLvl: 999, mobs: ["m_hag", "m_wheel"], boss: "b_sanzu", rareMob: null }       
+    { name: "三途川畔", minLvl: 50, maxLvl: 59, mobs: ["m_hag", "m_wheel"], boss: "b_sanzu", rareMob: null },
+    { name: "賊寇營地", minLvl: 50, maxLvl: 99, mobs: ["m_ghoul", "m_skel"], boss: "b_bandit", rareMob: null },
+    { name: "大江山．鬼族巢穴", minLvl: 60, maxLvl: 69, mobs: ["m_spider", "m_oni"], boss: "b_shuten", rareMob: null },
+    { name: "無間奈落", minLvl: 70, maxLvl: 999, mobs: ["m_gozu", "m_mezu"], boss: "b_enma", rareMob: null }       
 ];
+
+
+// --- ⛩️ 永夜之境：流派宗門資料庫 ---
+const SECT_DB = {
+    'samurai': {
+        id: 'samurai', name: '天辰一刀流', roleName: '武士道', mainStat: 'str',
+        guideNPC: '【師範代】 劍之介', leaderNPC: '【宗主】 柳生',
+        desc: '追求極致的單發破壞力與暴擊，放棄無謂的防禦。',
+        joinHint: '需要展現純粹的武力。前往賊寇營地，提著頭目的刀來見我。',
+        ranks: ['門下生', '目錄', '免許皆傳'], 
+        reqContrib: [0, 500, 2000], // 晉升下一階所需貢獻度
+        skills: ['sect_samurai_p1', 'sect_samurai_a1', 'sect_samurai_p2', 'sect_samurai_a2', 'sect_samurai_ult']
+    },
+    'ninja': {
+        id: 'ninja', name: '夜叉隱秘眾', roleName: '忍者', mainStat: 'agi',
+        guideNPC: '【引路人】 渡鴉', leaderNPC: '【首領】 霧影',
+        desc: '如影隨形，用劇毒與極限的閃避折磨對手。',
+        joinHint: '夜叉不收死人。在幻影竹林的試煉中，證明妳能活過 60 秒。',
+        ranks: ['下忍', '中忍', '上忍'],
+        reqContrib: [0, 500, 2000],
+        skills: ['sect_ninja_p1', 'sect_ninja_a1', 'sect_ninja_p2', 'sect_ninja_a2', 'sect_ninja_ult']
+    },
+    'shinto': {
+        id: 'shinto', name: '高天原神道', roleName: '神道', mainStat: 'vit',
+        guideNPC: '【禰宜】 柊', leaderNPC: '【大宮司】 宗像',
+        desc: '借用神明之力，雖然攻擊緩慢，但擁有極高的生存力與法術爆發。',
+        joinHint: '神明只庇佑虔誠之人。捐獻十萬香油錢，並呈上神恩注連繩吧。',
+        ranks: ['見習', '正階', '齋王'],
+        reqContrib: [0, 500, 2000],
+        skills: ['sect_shinto_p1', 'sect_shinto_a1', 'sect_shinto_p2', 'sect_shinto_a2', 'sect_shinto_ult']
+    }
+};
+
+
+
+
 
 const skillDB = {
     'agi_combo1': { id: 'agi_combo1', req: { agi: 5 }, cat: 'init', name: '猛毒刃', type: 'passive', desc: '【被動】普通攻擊時有 15% 機率使目標中毒，每秒造成 (速度 x 1.5) 的真實傷害，持續 4 秒。', color: '#2ecc71' },
@@ -101,10 +193,26 @@ const skillDB = {
     'vit_strike': { id: 'vit_strike', req: { vit: 5 }, cat: 'init', name: '靈氣爆發', type: 'active', desc: '將體內真氣瞬間外放，造成 (魔法攻擊 x 8.0) 點魔法傷害並震暈敵方 1.5 秒。', cd: 12, color: '#e1b12c' },
     'vit_thorns': { id: 'vit_thorns', req: { vit: 15 }, cat: 'init', name: '反擊架勢', type: 'passive', desc: '受到攻擊時，必定反彈 50% 減傷前的物理傷害，並附加 (護甲防禦 x 1.5) 的震懾傷害。', color: '#e1b12c' },
     'str_cleave': { id: 'str_cleave', req: { str: 15 }, cat: 'init', name: '蓄力一擊', type: 'active', desc: '造成 (物理攻擊 x 2.5) 點物理傷害，且該次攻擊完全無視敵方防禦。', cd: 15, color: '#ff4757' },
-    'sect_samurai_1': { id: 'sect_samurai_1', req: { str: 20, vit: 10 }, cat: 'job', name: '一之型．櫻斬', type: 'active', desc: '武士秘傳。造成 (物理攻擊 x 1.5 + 最大生命值 x 0.05) 的物理傷害。(開發中)', cd: 12, color: '#ff4757' },
-    'sect_shinto_1': { id: 'sect_shinto_1', req: { vit: 20, agi: 10 }, cat: 'job', name: '天照神罰', type: 'active', desc: '神道秘傳。以真氣轉化為法術，造成 (魔法攻擊 x 3.5) 的毀滅性魔法傷害。(開發中)', cd: 15, color: '#e1b12c' },
-    'sect_onmyoji_1': { id: 'sect_onmyoji_1', req: { agi: 20, str: 10 }, cat: 'job', name: '五星雷符', type: 'active', desc: '陰陽秘傳。施放符咒引雷，造成 (魔法攻擊 x 1.0 + 速度 x 2.0) 的混合傷害。(開發中)', cd: 10, color: '#2ecc71' },
-    'sect_ronin_1': { id: 'sect_ronin_1', req: { str: 30 }, cat: 'job', name: '血剎刃', type: 'active', desc: '浪人秘傳。消耗 10% 當前生命值，造成 (物理攻擊 x 3.0) 的物理傷害，並吸血 50%。(開發中)', cd: 8, color: '#8b0000' }
+    // --- 🗡️ 天辰一刀流 ---
+    'sect_samurai_p1': { id: 'sect_samurai_p1', rank: 0, req: { str: 50 }, cat: 'job', name: '心眼・修羅', type: 'passive', desc: '【門下生】爆擊傷害提升至 2.5 倍。', color: '#ff4757' },
+    'sect_samurai_a1': { id: 'sect_samurai_a1', rank: 0, req: { str: 60 }, cat: 'job', name: '秘劍・燕返', type: 'active', desc: '【門下生】造成 4.0 倍物理傷害，敵血<30%時必定爆擊。', cd: 15, color: '#ff4757' },
+    'sect_samurai_p2': { id: 'sect_samurai_p2', rank: 1, req: { str: 100 }, cat: 'job', name: '剛體・不屈', type: 'passive', desc: '【目錄】普攻可無視敵方 20% 的護甲。', color: '#ff4757' },
+    'sect_samurai_a2': { id: 'sect_samurai_a2', rank: 1, req: { str: 120 }, cat: 'job', name: '秘劍・居合', type: 'active', desc: '【目錄】造成 6.0 倍傷害並中斷敵方下次攻擊。', cd: 20, color: '#ff4757' },
+    'sect_samurai_ult': { id: 'sect_samurai_ult', rank: 2, req: { str: 180 }, cat: 'job', name: '奧義・無明三段突', type: 'active', desc: '【奧義】燃燒10%體力，造成10.0倍傷害並使其防禦歸零5秒。', cd: 45, color: '#ff4757' },
+
+    // --- 🥷 夜叉隱秘眾 ---
+    'sect_ninja_p1': { id: 'sect_ninja_p1', rank: 0, req: { agi: 50 }, cat: 'job', name: '忍法・幻影', type: 'passive', desc: '【下忍】閃避上限提升至 85%，成功閃避時所有 CD -1秒。', color: '#2ecc71' },
+    'sect_ninja_a1': { id: 'sect_ninja_a1', rank: 0, req: { agi: 60 }, cat: 'job', name: '忍具・苦無微塵', type: 'active', desc: '【下忍】投擲苦無，立即結算所有毒傷並引爆真實傷害。', cd: 12, color: '#2ecc71' },
+    'sect_ninja_p2': { id: 'sect_ninja_p2', rank: 1, req: { agi: 100 }, cat: 'job', name: '毒術・紫藤', type: 'passive', desc: '【中忍】猛毒時間延長 2 秒，毒傷頻率加快 30%。', color: '#2ecc71' },
+    'sect_ninja_a2': { id: 'sect_ninja_a2', rank: 1, req: { agi: 120 }, cat: 'job', name: '忍法・影分身', type: 'active', desc: '【中忍】創造殘影，接下來 3 次閃避必定成功且無視上限。', cd: 20, color: '#2ecc71' },
+    'sect_ninja_ult': { id: 'sect_ninja_ult', rank: 2, req: { agi: 180 }, cat: 'job', name: '秘傳・黃泉送葬', type: 'active', desc: '【奧義】5秒內閃避率100%且閃避時觸發致命流血反擊。', cd: 40, color: '#2ecc71' },
+
+    // --- 🌸 高天原神道 ---
+    'sect_shinto_p1': { id: 'sect_shinto_p1', rank: 0, req: { vit: 50 }, cat: 'job', name: '神明加護', type: 'passive', desc: '【見習】將體質(VIT)的 10% 轉換為每秒自癒量。', color: '#e1b12c' },
+    'sect_shinto_a1': { id: 'sect_shinto_a1', rank: 0, req: { vit: 60 }, cat: 'job', name: '神樂・八咫咒縛', type: 'active', desc: '【見習】造成 4.0 倍魔法傷害並封印敵方攻擊 3 秒。', cd: 20, color: '#e1b12c' },
+    'sect_shinto_p2': { id: 'sect_shinto_p2', rank: 1, req: { vit: 100 }, cat: 'job', name: '靈力護體', type: 'passive', desc: '【正階】受到的所有傷害固定減免 15%。', color: '#e1b12c' },
+    'sect_shinto_a2': { id: 'sect_shinto_a2', rank: 1, req: { vit: 120 }, cat: 'job', name: '神儀・破魔矢', type: 'active', desc: '【正階】造成 5.0 倍傷害並驅散自身所有負面狀態。', cd: 18, color: '#e1b12c' },
+    'sect_shinto_ult': { id: 'sect_shinto_ult', rank: 2, req: { vit: 180 }, cat: 'job', name: '禁術・高天原之怒', type: 'active', desc: '【奧義】恢復50%體力並對敵造成當前HP與法傷5倍之傷害。', cd: 60, color: '#e1b12c' }
 };
 
 function getItem(id) { return ITEM_DB[id] || { name: "不明物體", cost: 0, val: 0, rate: 0, value: 0, sellable: false, sellPrice: 0 }; }
