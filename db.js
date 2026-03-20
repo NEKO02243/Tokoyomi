@@ -7,7 +7,10 @@ const EFFECT_MAP = {
     'gold_boost': { field: 'gold', multiplier: 1.3, name: '金幣加成' },
     'atk_boost': { field: 'atk', multiplier: 1.1, name: '攻擊加成' },
     'god_bless': { field: 'all', multiplier: 1.5, name: '神明降臨' },
-    'samurai_parry': { field: 'parry', multiplier: 0, name: '燕返招架' }
+    'samurai_parry': { field: 'parry', multiplier: 0, name: '燕返招架' },
+    'yomi_shrine': { field: 'yomi', multiplier: 0, name: '黃泉領域' },
+    'shinto_shield': { field: 'shield', multiplier: 0.6, name: '天狐結界' },
+    'samurai_frenzy': { field: 'atk', multiplier: 1.1, name: '鬼人狂暴' }
 };
 
 const ITEM_DB = {
@@ -198,25 +201,25 @@ const skillDB = {
     'str_cleave': { id: 'str_cleave', req: { str: 15 }, cat: 'init', name: '蓄力一擊', type: 'active', desc: '造成 (物理攻擊 x 2.5) 點物理傷害，且該次攻擊完全無視敵方防禦。', cd: 15, color: '#ff4757' },
     // --- 🗡️ 無明一刀流 (力量/爆擊/瞬間爆發) ---
     'sect_samurai_p1': { id: 'sect_samurai_p1', rank: 0, req: { str: 50 }, cat: 'job', name: '劍氣護體', type: 'trait', desc: '【流派特性】武士的霸氣不言而喻。轉職後永久提升 10% 基礎物理攻擊力與 5% 減傷。(無須裝備)', color: '#e74c3c' },
-    'sect_samurai_a1': { id: 'sect_samurai_a1', rank: 0, req: { str: 60 }, cat: 'job', name: '秘劍・居合', type: 'active', desc: '【初傳】拔刀術的極致！造成極高物理傷害，若目標血量低於 30%，傷害翻倍。', cd: 10, color: '#e74c3c' },
-    'sect_samurai_p2': { id: 'sect_samurai_p2', rank: 1, req: { str: 100 }, cat: 'job', name: '鬼人化', type: 'passive', desc: '【核心被動】捨棄防禦追求極致殺戮。爆擊率提升 15%，且爆擊時無視目標 20% 護甲。', color: '#e74c3c' },
-    'sect_samurai_a2': { id: 'sect_samurai_a2', rank: 1, req: { str: 120 }, cat: 'job', name: '燕返', type: 'active', desc: '【主動】擺出招架架勢，接下來的 5 秒內若受到物理攻擊，將完全格擋並造成 200% 的反擊傷害！', cd: 18, color: '#e74c3c' },
-    'sect_samurai_ult': { id: 'sect_samurai_ult', rank: 2, req: { str: 180 }, cat: 'job', name: '奧義・修羅一閃', type: 'active', desc: '【終極奧義】燃燒生命力發動的絕命一擊。消耗 10% 當前生命，對全體敵人造成毀滅性物理斬擊！', cd: 25, color: '#e74c3c' },
+    'sect_samurai_a1': { id: 'sect_samurai_a1', rank: 0, req: { str: 60 }, cat: 'job', name: '秘劍・居合', type: 'active', desc: '【初傳】拔刀術的極致！造成 (物理攻擊 x 3.0) 點物理傷害，若目標血量低於 30%，傷害翻倍。', cd: 10, color: '#e74c3c' },
+    'sect_samurai_p2': { id: 'sect_samurai_p2', rank: 1, req: { str: 100 }, cat: 'job', name: '鬼人化', type: 'passive', desc: '【核心被動】捨棄防禦追求極致殺戮。爆擊率提升 15%；爆擊時無視目標 20% 護甲，並賦予自身 3 秒「鬼人狂暴」(攻擊力+10%)。', color: '#e74c3c' },
+    'sect_samurai_a2': { id: 'sect_samurai_a2', rank: 1, req: { str: 120 }, cat: 'job', name: '燕返', type: 'active', desc: '【主動】擺出招架架勢，接下來的 5 秒內若受到物理攻擊，將完全格擋並造成 (物理攻擊 x 2.0) 的反擊傷害！', cd: 18, color: '#e74c3c' },
+    'sect_samurai_ult': { id: 'sect_samurai_ult', rank: 2, req: { str: 180 }, cat: 'job', name: '奧義・修羅一閃', type: 'active', desc: '【終極奧義】燃燒生命力發動的絕命一擊。消耗 10% 當前生命，對目標造成 (物理攻擊 x 4.0 + 體質 x 1.5) 的毀滅性物理斬擊！', cd: 20, color: '#e74c3c' },
 
     // --- 🥷 夜叉隱秘眾 (敏捷/毒殺/閃避反擊) ---
     'sect_ninja_p1': { id: 'sect_ninja_p1', rank: 0, req: { agi: 50 }, cat: 'job', name: '忍法・幻影', type: 'trait', desc: '【流派特性】忍者天生身輕如燕，攻擊淬有劇毒。轉職後永久提升 10% 基礎閃避率，且普通攻擊有 20% 機率使目標中毒，持續 8 秒。(無須裝備於技能槽)', color: '#2ecc71' },
-    'sect_ninja_a1': { id: 'sect_ninja_a1', rank: 0, req: { agi: 60 }, cat: 'job', name: '忍具・苦無微塵', type: 'active', desc: '【下忍】投擲苦無，對目標造成傷害並強制附加中毒效果。若目標已中毒，則改為引爆所有剩餘毒傷，造成大量真實傷害。', cd: 12, color: '#2ecc71' },
-    'sect_ninja_p2': { id: 'sect_ninja_p2', rank: 1, req: { agi: 100 }, cat: 'job', name: '毒術・紫藤', type: 'passive', desc: '【核心被動】精通毒的奧義。毒素發作頻率提升，並且會腐蝕目標護甲，使其防禦力降低 30%。', color: '#2ecc71' },
-    'sect_ninja_poison_synergy': { id: 'sect_ninja_poison_synergy', rank: 1, req: { agi: 85 }, cat: 'job', name: '毒刃・暴發', type: 'passive', desc: '【毒忍強化】對已中毒的敵方，每次普通攻擊有 25% 機率引爆毒液，造成 (當前毒層數 × 速度 × 0.8) 真實傷害。', color: '#2ecc71' },
-    'sect_ninja_a2': { id: 'sect_ninja_a2', rank: 1, req: { agi: 120 }, cat: 'job', name: '忍法・影分身', type: 'active', desc: '【主動】召喚殘影協同作戰，發動瞬間進行三次疾風連斬！', cd: 15, color: '#2ecc71' },
-    'sect_ninja_ult': { id: 'sect_ninja_ult', rank: 2, req: { agi: 180 }, cat: 'job', name: '秘傳・黃泉送葬', type: 'active', desc: '【終極奧義】進入 5 秒黃泉領域。期間只要成功閃避敵方攻擊，必定無視冷卻發動強力反擊！', cd: 20, color: '#2ecc71' },
+    'sect_ninja_a1': { id: 'sect_ninja_a1', rank: 0, req: { agi: 60 }, cat: 'job', name: '忍具・苦無微塵', type: 'active', desc: '【下忍】投擲苦無，對目標造成 (速度 x 1.0) 點傷害並強制附加 8 秒中毒效果。若目標已中毒，則改為引爆所有剩餘毒傷。', cd: 12, color: '#2ecc71' },
+    'sect_ninja_p2': { id: 'sect_ninja_p2', rank: 1, req: { agi: 100 }, cat: 'job', name: '毒術・紫藤', type: 'passive', desc: '【核心被動】精通毒的奧義。毒素發作頻率提升為每 0.6 秒一次，單次傷害微調為 (速度 x 1.0)，並且會腐蝕目標護甲，使其防禦力降低 30%。', color: '#2ecc71' },
+    'sect_ninja_poison_synergy': { id: 'sect_ninja_poison_synergy', rank: 1, req: { agi: 85 }, cat: 'job', name: '毒刃・暴發', type: 'passive', desc: '【毒忍強化】對已中毒的敵方，每次普通攻擊有 25% 機率引爆毒液，造成 (剩餘毒發次數 × 速度 × 0.8) 的真實傷害。', color: '#2ecc71' },
+    'sect_ninja_a2': { id: 'sect_ninja_a2', rank: 1, req: { agi: 120 }, cat: 'job', name: '忍法・影分身', type: 'active', desc: '【主動】召喚殘影協同作戰，發動三次疾風連斬，每次造成 (速度 x 1.5 + 物攻 x 0.8) 點傷害，且必定使目標中毒 8 秒！', cd: 15, color: '#2ecc71' },
+    'sect_ninja_ult': { id: 'sect_ninja_ult', rank: 2, req: { agi: 180 }, cat: 'job', name: '秘傳・黃泉送葬', type: 'active', desc: '【終極奧義】進入 5 秒黃泉領域。期間只要成功閃避敵方攻擊，必定無視冷卻發動強力反擊，造成 (速度 x 2.5 + 物理攻擊 x 1.0) 的傷害！', cd: 15, color: '#2ecc71' },
 
     // --- ⛩️ 高天原神道 (體質/回復/法術反傷) ---
     'sect_shinto_p1': { id: 'sect_shinto_p1', rank: 0, req: { vit: 50 }, cat: 'job', name: '神明庇佑', type: 'trait', desc: '【流派特性】受神明眷顧之軀。轉職後最大生命值 (HP) 永久提升 15%，且每 5 秒自動回復最大生命值的 5%。(無須裝備)', color: '#e1b12c' },
-    'sect_shinto_a1': { id: 'sect_shinto_a1', rank: 0, req: { vit: 60 }, cat: 'job', name: '破魔矢', type: 'active', desc: '【祝詞】發射蘊含神力的箭矢，造成基於 VIT (體質) 的魔法傷害，並降低敵方 10% 攻擊力。', cd: 10, color: '#e1b12c' },
+    'sect_shinto_a1': { id: 'sect_shinto_a1', rank: 0, req: { vit: 60 }, cat: 'job', name: '破魔矢', type: 'active', desc: '【祝詞】發射蘊含神力的箭矢，造成 (體質 x 1.8 + 魔法攻擊 x 1.0) 點魔法傷害，並降低敵方 10% 攻擊力。', cd: 10, color: '#e1b12c' },
     'sect_shinto_p2': { id: 'sect_shinto_p2', rank: 1, req: { vit: 100 }, cat: 'job', name: '禍津反轉', type: 'passive', desc: '【核心被動】將受到的苦難轉為恩惠。每次受到攻擊時，有 20% 機率回復等同自身 VIT 數值的生命。', color: '#e1b12c' },
     'sect_shinto_a2': { id: 'sect_shinto_a2', rank: 1, req: { vit: 120 }, cat: 'job', name: '天狐結界', type: 'active', desc: '【主動】展開結界。5 秒內受到的所有傷害降低 40%，並將減免的傷害轉化為治療波輻射自身。', cd: 20, color: '#e1b12c' },
-    'sect_shinto_ult': { id: 'sect_shinto_ult', rank: 2, req: { vit: 180 }, cat: 'job', name: '神威・天照', type: 'active', desc: '【終極奧義】召喚太陽神之光！瞬間淨化所有負面狀態，恢復 40% 生命，並對敵人造成神聖灼燒傷害。', cd: 30, color: '#e1b12c' }
+    'sect_shinto_ult': { id: 'sect_shinto_ult', rank: 2, req: { vit: 180 }, cat: 'job', name: '神威・天照', type: 'active', desc: '【終極奧義】召喚太陽神之光！瞬間淨化所有負面狀態，恢復 40% 生命，並對敵人造成 (體質 x 2.5) 的神聖灼燒傷害。', cd: 30, color: '#e1b12c' }
 };
 
 function getItem(id) { return ITEM_DB[id] || { name: "不明物體", cost: 0, val: 0, rate: 0, value: 0, sellable: false, sellPrice: 0 }; }

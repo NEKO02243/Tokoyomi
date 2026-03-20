@@ -1,7 +1,7 @@
 /* ==========================================================================
    ⚙️ 遊戲核心邏輯 (V0.7.3 忍者特性與跳字優化版)
    ========================================================================== */
-const CURRENT_VERSION = "0.7.3";
+const CURRENT_VERSION = "0.7.4";
 
 function formatHelperTime(totalSeconds) {
     if (totalSeconds <= 0) return "已到期";
@@ -24,6 +24,9 @@ const defaultPlayer = {
     sect: null,
     sectContrib: 0, // ✨ 新增：流派貢獻度
     sectRank: 0,    // ✨ 新增：流派階級 (對應 0, 1, 2)
+    hasSeenIntro: false,
+    hasSeenVillageIntro: false,
+    hasSeenShrineIntro: false,
     name: "", lvl: 1, exp: 0, next: 30, gold: 0,
     str: 2, vit: 1, agi: 0, statPoints: 5,
     lockedStats: { str: 2, vit: 1, agi: 0 },
@@ -51,7 +54,7 @@ let statPreview = { str: 0, vit: 0, agi: 0 };
 // ✨ 新增 currentHelperFilter
 let currentLogTab = 'log'; let currentInvFilter = 'all'; let currentSkillFilter = 'all'; let currentHelperFilter = 'all'; let testDummyType = 'static';
 
-let combatState = { mobAtkTimer: 2.0, skillCds: [0, 0, 0, 0, 0, 0], slotSetupCds: [0, 0, 0, 0, 0, 0], zenTimer: 0, zenDmgAccum: 0, potionCd: 0, helperSkillCd: 0, testMode: false, skillDmgLog: [], testStartTime: 0, totalDmgDealt: 0, shintoHealTimer: 0, lastDmg: 0 };
+let combatState = { mobAtkTimer: 2.0, playerAtkTimer: 0, skillCds: [0, 0, 0, 0, 0, 0], slotSetupCds: [0, 0, 0, 0, 0, 0], zenTimer: 0, zenDmgAccum: 0, potionCd: 0, helperSkillCd: 0, testMode: false, skillDmgLog: [], testStartTime: 0, totalDmgDealt: 0, shintoHealTimer: 0, lastDmg: 0 };
 let initAllocatedStats = { str: 2, vit: 1, agi: 0 };
 let casinoState = { active: false, bet: 0, playerTotal: 0, dealerTotal: 0, isAllIn: false, msg: "", deck: [], playerCards: [], dealerCards: [], gameOver: false };
 
@@ -194,7 +197,7 @@ function postLoadInit() {
     spawn(false);
     updateUI();
     isPaused = false;
-    log(`💡 【V${CURRENT_VERSION}】：流派專屬技能已經更新，歡迎體驗`, "var(--accent)");
+    log(`💡 【V${CURRENT_VERSION}】技能功能稍微修正、劇情模式陸續推出中`, "var(--accent)");
     if (player.lvl === 1 && player.exp === 0 && player.gold === 0 && player.potions.p1 === 5) log("🎁 新手物資已發放：生鮮野味 x5", "var(--quest)");
     if (player.name === "御雷神命") { let gmCard = el('card-gm'); if (gmCard) gmCard.classList.remove('hidden'); }
 
@@ -231,9 +234,15 @@ function postLoadInit() {
         }
     }
 
-    if (currentView === 'battle' && !player.workStartTime) startBattleLoop();
+    if (!player.hasSeenIntro) {
+        isPaused = true;
+        runIntro();
+    } else {
+        if (currentView === 'battle' && !player.workStartTime) startBattleLoop();
+    }
     if (player.workStartTime) { isPaused = true; switchView('village'); showSubView('work'); }
 }
+
 
 let lastActiveTime = Date.now();
 document.addEventListener("visibilitychange", () => {
@@ -643,6 +652,9 @@ function usePotion(isManual = false) {
 
         player.potions[pid]--; let heal = pItem.value > 0 ? pItem.value : Math.floor(getMaxHP() * pItem.rate); player.hp = Math.min(getMaxHP(), player.hp + heal);
         combatState.potionCd = 5.0; showDmg('p-box', `+${heal}`, 'lime');
+        if (currentView === 'battle' && !isPaused) {
+            writeCombatLog(`🍵 <span style="color:#4a90e2">${player.name || "妳"}</span> 飲用了 <b style="color:lime">${pItem.name}</b>，恢復了 <b style="color:white">${heal}</b> 點體力！`, 'player');
+        }
         if (player.potions[pid] === 0) { log(`【系統】${pItem.name} 耗盡！`, "var(--danger)"); if (isManual) autoHealLogic(true); }
         updateUI(); return true;
     } else { if (isManual) openModal("補給耗盡", "補給品不足！請前往商店購買。", "知道了"); return false; }
@@ -695,7 +707,9 @@ function toggleHelper(id) {
 function getAtkVal() {
     let base = Math.floor(player.str * 2) + ((player.gear.arms || 0) * 3);
     if (player.activeHelper && HELPER_DB[player.activeHelper]) { base += HELPER_DB[player.activeHelper].passive(player).atk || 0; }
+    if (hasPassive('sect_samurai_p1')) base = Math.floor(base * 1.1); // ✨ 武士：劍氣護體 (+10%物攻)
     if (player.buffs && player.buffs['atk_boost'] > 0) base *= EFFECT_MAP['atk_boost'].multiplier;
+    if (player.buffs && player.buffs['samurai_frenzy'] > 0) base = Math.floor(base * EFFECT_MAP['samurai_frenzy'].multiplier); // ✨ 鬼人狂暴
     return Math.floor(base);
 }
 function getDefVal() {
@@ -732,7 +746,11 @@ function getEvaPercent() {
     // 最終天花板鎖定在 80% (確保滿裝滿敏的忍者不浪費屬性)
     return Math.min(80, base);
 }
-function getMaxHP() { return Math.floor(player.vit * 20 + 100); }
+function getMaxHP() { 
+    let base = Math.floor(player.vit * 20 + 100); 
+    if (hasPassive('sect_shinto_p1')) base = Math.floor(base * 1.15); // ✨ 神道：神明庇佑 (+15%HP)
+    return base; 
+}
 
 function executeSkill(slotIdx) {
     let sid = player.equippedSkills[slotIdx];
@@ -757,13 +775,13 @@ function executeSkill(slotIdx) {
             let remainingTicks = Math.ceil(monster.poisoned / (hasPassive('sect_ninja_p2') ? 0.6 : 1.0));
             finalDmg = poisonDmgPerTick * remainingTicks;
             monster.poisoned = 0; // 移除中毒
-            writeCombatLog(`💥 ${pName} 的苦無引爆了猛毒，對 ${monster.name} 造成 <b style="color:white">${finalDmg}</b> 點巨大傷害！`);
+            writeCombatLog(`💥 ${pName} 的苦無引爆了猛毒，對 ${monster.name} 造成 <b style="color:white">${finalDmg}</b> 點巨大傷害！`, 'player');
         } else {
             // 狀態 2: 未中毒 -> 上毒
             finalDmg = Math.floor(getSpdVal() * 1.0); // 造成少量初始傷害
             monster.poisoned = 8.0; // 強制上毒，持續8秒
             monster.poisonTick = 1.0;
-            writeCombatLog(`🐍 ${pName} 的苦無淬上了劇毒，使 ${monster.name} 陷入 <b style="color:#2ecc71">中毒</b> 狀態！`);
+            writeCombatLog(`🐍 ${pName} 的苦無淬上了劇毒，使 ${monster.name} 陷入 <b style="color:#2ecc71">中毒</b> 狀態！`, 'player');
         }
         if (!isDummy) monster.hp -= finalDmg;
         showDmg('m-box', finalDmg, sk.color);
@@ -772,17 +790,21 @@ function executeSkill(slotIdx) {
     else if (sid === 'sect_ninja_a2') { // 忍法・影分身 (瞬間連砍三次)
         let hitDmg = Math.floor(getSpdVal() * 1.5 + getAtkVal() * 0.8);
         finalDmg = hitDmg * 3;
-        if (!isDummy) monster.hp -= finalDmg;
+        if (!isDummy) {
+            monster.hp -= finalDmg;
+            monster.poisoned = 8.0; // ✨ 必定上毒
+            monster.poisonTick = 1.0;
+        }
         setTimeout(() => showDmg('m-box', hitDmg, '#fff'), 0);
         setTimeout(() => showDmg('m-box', hitDmg, '#ccc'), 150);
         setTimeout(() => showDmg('m-box', hitDmg, '#888'), 300);
         showDmg('p-box', "【影分身】", sk.color);
-        writeCombatLog(`👥 ${pName} 施放 <b style="color:${sk.color}">【影分身】</b>，發動疾風連斬共造成 <b style="color:white">${finalDmg}</b> 點傷害！`);
+        writeCombatLog(`👥 ${pName} 施放 <b style="color:${sk.color}">【影分身】</b>，發動疾風連斬造成 <b style="color:white">${finalDmg}</b> 點傷害，並使目標陷入<b style="color:#2ecc71">劇毒</b>！`, 'player');
     }
     else if (sid === 'sect_ninja_ult') { // 秘傳・黃泉送葬
         applyBuff('yomi_shrine', 5.0); // 賦予 5 秒黃泉狀態 (需在戰鬥迴圈配合，這裡先上 Buff)
         showDmg('p-box', "【黃泉送葬】", sk.color);
-        writeCombatLog(`💀 ${pName} 展開了 <b style="color:${sk.color}">【黃泉領域】</b>，準備反殺！`);
+        writeCombatLog(`💀 ${pName} 展開了 <b style="color:${sk.color}">【黃泉領域】</b>，準備反殺！`, 'player');
     }
 
     // ----------------------------------------------------
@@ -793,22 +815,22 @@ function executeSkill(slotIdx) {
         if (!isDummy && monster.hp < monster.mhp * 0.3) finalDmg *= 2; // 斬殺效果
         if (!isDummy) monster.hp -= finalDmg;
         showDmg('m-box', finalDmg, sk.color); showDmg('p-box', "【居合】", sk.color);
-        writeCombatLog(`⚔️ ${pName} 拔刀施放 <b style="color:${sk.color}">【居合】</b>，造成 <b style="color:white">${finalDmg}</b> 點致命斬擊！`);
+        writeCombatLog(`⚔️ ${pName} 拔刀施放 <b style="color:${sk.color}">【居合】</b>，造成 <b style="color:white">${finalDmg}</b> 點致命斬擊！`, 'player');
     }
     else if (sid === 'sect_samurai_a2') { // 燕返
         applyBuff('samurai_parry', 5.0); // 招架狀態維持 5 秒
         showDmg('p-box', "【燕返架勢】", sk.color);
-        writeCombatLog(`🛡️ ${pName} 擺出 <b style="color:${sk.color}">【燕返】</b> 架勢，準備反擊！`);
+        writeCombatLog(`🛡️ ${pName} 擺出 <b style="color:${sk.color}">【燕返】</b> 架勢，準備反擊！`, 'player');
         // 燕返本身不造成直接傷害
     }
     else if (sid === 'sect_samurai_ult') { // 奧義・修羅一閃
         let hpCost = Math.floor(player.hp * 0.1);
         player.hp -= hpCost; // 扣血
-        finalDmg = Math.floor(getAtkVal() * 6.0 + hpCost * 2);
+        finalDmg = Math.floor(getAtkVal() * 4.0 + player.vit * 1.5); // ✨ 套用乾淨的新公式：物攻x4 + 體質x1.5
         if (!isDummy) monster.hp -= finalDmg;
         showDmg('p-box', `-${hpCost}`, 'var(--danger)');
         showDmg('m-box', finalDmg, sk.color); showDmg('p-box', "【修羅一閃】", sk.color);
-        writeCombatLog(`🩸 ${pName} 燃燒生命施放 <b style="color:${sk.color}">【修羅一閃】</b>，造成 <b style="color:white">${finalDmg}</b> 點毀滅傷害！`);
+        writeCombatLog(`🩸 ${pName} 燃燒生命施放 <b style="color:${sk.color}">【修羅一閃】</b>，造成 <b style="color:white">${finalDmg}</b> 點毀滅傷害！`, 'player');
     }
 
     // ----------------------------------------------------
@@ -816,9 +838,17 @@ function executeSkill(slotIdx) {
     // ----------------------------------------------------
     else if (sid === 'sect_shinto_a1') { // 破魔矢
         finalDmg = Math.floor(player.vit * 1.8 + getMatkVal() * 1.0);
-        if (!isDummy) monster.hp -= finalDmg;
+        if (!isDummy) {
+            monster.hp -= finalDmg;
+            monster.atk = Math.floor(monster.atk * 0.9); // ✨ 降敵方 10% 攻擊力
+        }
         showDmg('m-box', finalDmg, sk.color); showDmg('p-box', "【破魔矢】", sk.color);
-        writeCombatLog(`🏹 ${pName} 射出 <b style="color:${sk.color}">【破魔矢】</b>，造成 <b style="color:white">${finalDmg}</b> 點神聖傷害！`);
+        writeCombatLog(`🏹 ${pName} 射出 <b style="color:${sk.color}">【破魔矢】</b>，造成 <b style="color:white">${finalDmg}</b> 點神聖傷害！`, 'player');
+    }
+    else if (sid === 'sect_shinto_a2') { // 天狐結界
+        applyBuff('shinto_shield', 5.0); // 賦予 5 秒結界狀態
+        showDmg('p-box', "【天狐結界】", sk.color);
+        writeCombatLog(`🦊 ${pName} 展開了 <b style="color:${sk.color}">【天狐結界】</b>，準備將苦難轉化為治癒！`, 'player');
     }
     else if (sid === 'sect_shinto_ult') { // 神威・天照
         let healAmt = Math.floor(getMaxHP() * 0.4);
@@ -827,7 +857,7 @@ function executeSkill(slotIdx) {
         if (!isDummy) monster.hp -= finalDmg;
         showDmg('p-box', `+${healAmt}`, 'var(--quest)');
         showDmg('m-box', finalDmg, sk.color); showDmg('p-box', "【神威・天照】", sk.color);
-        writeCombatLog(`☀️ ${pName} 呼喚 <b style="color:${sk.color}">【天照之光】</b>，恢復自身體力並對敵人造成 <b style="color:white">${finalDmg}</b> 點灼燒傷害！`);
+        writeCombatLog(`☀️ ${pName} 呼喚 <b style="color:${sk.color}">【天照之光】</b>，恢復自身體力並對敵人造成 <b style="color:white">${finalDmg}</b> 點灼燒傷害！`, 'player');
     }
 
     // (保留原本的通用技能)
@@ -837,14 +867,14 @@ function executeSkill(slotIdx) {
         finalDmg = Math.floor(finalDmg); if (isDummy) combatState.zenDmgAccum += finalDmg; else monster.hp -= finalDmg;
         combatState.mobAtkTimer += 1.5;
         showDmg('m-box', finalDmg, sk.color); showDmg('m-box', "[暈眩]", '#e1b12c'); showDmg('p-box', "【靈氣爆發】", sk.color);
-        writeCombatLog(`🌀 ${pName} 施放了 <b style="color:${sk.color}">【靈氣爆發】</b>，造成 <b style="color:white">${finalDmg}</b> 點傷害並附帶暈眩！`);
+        writeCombatLog(`🌀 ${pName} 施放了 <b style="color:${sk.color}">【靈氣爆發】</b>，造成 <b style="color:white">${finalDmg}</b> 點傷害並附帶暈眩！`, 'player');
     }
     else if (sid === 'str_cleave') {
         let d = Math.floor(getAtkVal() * 2.5);
         finalDmg = d;
         if (isDummy) combatState.zenDmgAccum += finalDmg; else monster.hp -= finalDmg;
         showDmg('m-box', finalDmg, sk.color); showDmg('p-box', "【蓄力】", sk.color);
-        writeCombatLog(`💥 ${pName} 施放了 <b style="color:${sk.color}">【蓄力】</b>，造成 <b style="color:white">${finalDmg}</b> 點傷害！`);
+        writeCombatLog(`💥 ${pName} 施放了 <b style="color:${sk.color}">【蓄力】</b>，造成 <b style="color:white">${finalDmg}</b> 點傷害！`, 'player');
     }
 
     // ✨ 測試模式傷害記錄
@@ -867,7 +897,7 @@ function startBattleLoop() {
     if (battleTimer) { clearTimeout(battleTimer); battleTimer = null; }
     if (isPaused || currentView !== 'battle' || isReviving) { lastTickTime = Date.now(); return; }
 
-    let delay = Math.max(250, 1500 / (1 + player.agi * 0.008));
+    let delay = 100; // ✨ 將底層迴圈固定為 100ms (10 FPS)，用於平滑渲染跑條
     let now = Date.now(); let tickSec = (now - lastTickTime) / 1000; lastTickTime = now;
     if (tickSec > 10) tickSec = 10;
 
@@ -880,7 +910,7 @@ function startBattleLoop() {
             let healAmount = Math.floor(getMaxHP() * 0.05);
             player.hp = Math.min(getMaxHP(), player.hp + healAmount);
             showDmg('p-box', `+${healAmount}`, 'var(--quest)');
-            writeCombatLog(`✨ 【神明庇佑】恢復 ${healAmount} 點生命值。`);
+            writeCombatLog(`✨ <b style="color:var(--quest)">【神明庇佑】</b> 發揮作用，恢復了 <b style="color:white">${healAmount}</b> 點生命值。`, 'player');
             combatState.shintoHealTimer = 0;
         }
     } else {
@@ -952,127 +982,158 @@ function startBattleLoop() {
                 combatState.lastDmg = poisonDmg;
             }
 
-            showDmg('m-box', "猛毒 " + poisonDmg, '#2ecc71');
-            writeCombatLog(`🐍 <b style="color:#2ecc71">[猛毒]</b> 持續對 <span style="color:#e74c3c">${monster.name}</span> 造成 <b style="color:#2ecc71">${poisonDmg}</b> 點真實傷害。`);
+            let poisonLogName = isWisteria ? "紫藤劇毒" : "猛毒";
+            showDmg('m-box', `${poisonLogName} ${poisonDmg}`, '#2ecc71');
+            writeCombatLog(`🐍 <b style="color:#2ecc71">[${poisonLogName}]</b> 持續對 <span style="color:#e74c3c">${monster.name}</span> 造成 <b style="color:#2ecc71">${poisonDmg}</b> 點真實傷害。`, 'player');
         }
     }
 
-    let baseAtk = getAtkVal(); let skillUsed = false;
-    if (!isDummy ? monster.hp > 0 : true) {
-        for (let i = 0; i < 6; i++) { let sid = player.equippedSkills[i]; if (sid && skillDB[sid].type === 'active' && combatState.skillCds[i] <= 0) { if (checkGambit(i)) { if (executeSkill(i)) { skillUsed = true; break; } } } }
-    }
+    // ✨ 玩家攻擊計時器邏輯
+    let pMaxDelay = Math.max(0.25, 1.5 / (1 + player.agi * 0.008));
+    if (combatState.playerAtkTimer === undefined) combatState.playerAtkTimer = pMaxDelay;
+    combatState.playerAtkTimer -= tickSec;
 
-    if (!skillUsed && baseAtk > 0) {
-        // 1. ✨ 力量命中補正 (STR Hit Bonus)
-        // 戰士靠氣勢與重武器壓制對方閃避，每 10 點 STR 抵銷 1% 閃避
-        let strHitBonus = player.str * 0.1;
-        let rawDodge = (monster.eva || 0) + ((monster.agi || 0) - player.agi) * 0.1;
+    if (combatState.playerAtkTimer <= 0) {
+        combatState.playerAtkTimer = pMaxDelay; // 重置攻擊計時
 
-        // 最終閃避判定：至少保留 5% 的隨機性，最高不超過 70%
-        let finalDodge = Math.max(5, Math.min(70, rawDodge - strHitBonus));
-
-        let critChance = Math.min(30, player.critRate || 0);
-        if (hasPassive('sect_samurai_p2')) critChance += 15; // ✨ 武士被動：鬼人化 (+15%爆擊率)
-        let isCrit = (Math.random() * 100) < critChance;
-
-        // 判定是否命中
-        if (isCrit || (Math.random() * 100 >= finalDodge)) {
-            let mDef = monster.defVal || 0;
-
-            // ✨ 新增：紫藤被動的破甲效果
-            if (monster.poisoned > 0 && hasPassive('sect_ninja_p2')) {
-                mDef *= 0.7; // 降低 30% 防禦
-            }
-
-            if (isCrit && hasPassive('sect_samurai_p2')) mDef *= 0.8; // ✨ 武士被動：鬼人化 (爆擊無視20%護甲)
-
-            // 2. ✨ 普攻傷害 (不帶自動破甲，回歸標準公式)
-            let finalDmg = Math.max(0, baseAtk - (mDef / 2));
-            finalDmg = Math.floor(finalDmg * (1 - (monster.dr || 0)));
-
-            // 力量流戰士的保底傷害：即便沒破甲，重兵器砸下去還是有保底感
-            let minDmg = Math.floor(player.str * 0.5);
-            if (finalDmg < minDmg) finalDmg = minDmg;
-
-            if (isCrit) finalDmg = Math.floor(finalDmg * 1.5);
-            let triggeredPoison = false;
-            let triggeredWind = false;
-            let windDmg = 0; // ✨ 獨立宣告風刃傷害
-
-            // ✨ 猛毒刃觸發判定
-            // ✨ 新機制：忍者普攻自帶中毒，或裝備猛毒刃
-            if ((hasPassive('agi_combo1') || player.sect === 'ninja') && Math.random() < (player.sect === 'ninja' ? 0.20 : 0.15)) {
-                monster.poisoned = 8.0; // ✨ 中毒時間延長
-                monster.poisonTick = 1.0;
-                triggeredPoison = true;
-            }
-
-            // ✨ 優化 3：風刃 (加入專屬的視覺跳字)
-            if (hasPassive('agi_combo2') && Math.random() < 0.20) {
-                windDmg = Math.floor(baseAtk * 0.5 + getSpdVal() * 1.0);
-                finalDmg += windDmg;
-                triggeredWind = true;
-            }
-
-            if (finalDmg <= 0) { finalDmg = 0; if (Math.random() < 0.05) log(`[警告] 攻擊無法穿透敵方護甲，傷害為 0！`, "#888"); }
-
-            if (isDummy) {
-                combatState.zenDmgAccum += finalDmg;
-                showDmg('m-box', finalDmg === 0 ? '0' : finalDmg, finalDmg === 0 ? '#666' : (isCrit ? '#ffeb3b' : 'white'));
-                // ✨ 測試模式下記錄普通攻擊傷害並輸出日誌
-                if (combatState.testMode && finalDmg > 0) {
-                    combatState.totalDmgDealt += finalDmg;
-                    combatState.lastDmg = finalDmg;
-                }
-                // ✨ 道場模式：輸出攻擊日誌到戰況分頁
-                let pName = player.name || "妳";
-                let dmgTxt = isCrit ? `<b style="color:#ffeb3b">爆擊！${finalDmg}</b>` : `<b style="color:white">${finalDmg}</b>`;
-                writeCombatLog(`🗡️ <span style="color:#4a90e2">${pName}</span> 發動 <b style="color:#aaa">普攻</b>，對 <span style="color:#e74c3c">${monster.name}</span> 造成 ${dmgTxt} 點傷害。`);
-                if (triggeredWind) {
-                    setTimeout(() => writeCombatLog(`🌪️ <span style="color:#4a90e2">${pName}</span> 觸發 <b style="color:#81ecec">風刃</b>，追加 ${windDmg} 點撕裂傷害！`), 150);
-                }
-                if (triggeredPoison) {
-                    let d2 = triggeredWind ? 300 : 150;
-                    setTimeout(() => writeCombatLog(`🐍 <span style="color:#4a90e2">${pName}</span> 觸發 <b style="color:#2ecc71">毒刃</b>，使木人陷入猛毒狀態！`), d2);
-                }
-            } else if (monster.hp > 0) {
-                monster.hp -= finalDmg;
-
-                // ✨ 把忍者判定加在這裡！只要命中，強制把血量歸零
-                if (combatState.isNinjaEvent && monster.id === 'm_raven_trial') {
-                    monster.hp = 0;
-                }
-
-
-
-                // 💥 第 1 段：普攻跳字與日誌
-                showDmg('m-box', finalDmg === 0 ? '0' : finalDmg, finalDmg === 0 ? '#666' : (isCrit ? '#ffeb3b' : 'white'));
-                let dmgTxt = isCrit ? `<b style="color:#ffeb3b">爆擊！${finalDmg}</b>` : `<b style="color:white">${finalDmg}</b>`;
-                writeCombatLog(`🗡️ <span style="color:#4a90e2">${player.name || "妳"}</span> 發動 <b style="color:#aaa">普攻</b>，對 <span style="color:#e74c3c">${monster.name}</span> 造成 ${dmgTxt} 點傷害。`);
-
-                // 🌪️ 第 2 段：風刃跳字與日誌 (延遲 150 毫秒)
-                if (triggeredWind) {
-                    setTimeout(() => {
-                        showDmg('m-box', "風刃 " + windDmg, '#81ecec');
-                        writeCombatLog(`🌪️ <span style="color:#4a90e2">${player.name || "妳"}</span> 觸發 <b style="color:#81ecec">風刃</b>，追加了 ${windDmg} 點撕裂傷害！`);
-                    }, 150);
-                }
-
-                // 🐍 第 3 段：毒刃跳字與日誌 
-                if (triggeredPoison) {
-                    let delay = triggeredWind ? 300 : 150;
-                    setTimeout(() => {
-                        showDmg('m-box', "毒刃附著", '#2ecc71');
-                        writeCombatLog(`🐍 <span style="color:#4a90e2">${player.name || "妳"}</span> 觸發 <b style="color:#2ecc71">毒刃</b>，使 <span style="color:#e74c3c">${monster.name}</span> 陷入猛毒狀態！`);
-                    }, delay);
-                }
-            }
-        } else {
-            // 💨 閃避跳字與日誌
-            showDmg('m-box', "MISS", '#888');
-            writeCombatLog(`💨 <span style="color:#4a90e2">${player.name || "妳"}</span> 的攻擊被 <span style="color:#e74c3c">${monster.name}</span> <b style="color:#888">閃避</b> 了！`);
+        let baseAtk = getAtkVal(); let skillUsed = false;
+        if (!isDummy ? monster.hp > 0 : true) {
+            for (let i = 0; i < 6; i++) { let sid = player.equippedSkills[i]; if (sid && skillDB[sid].type === 'active' && combatState.skillCds[i] <= 0) { if (checkGambit(i)) { if (executeSkill(i)) { skillUsed = true; break; } } } }
         }
-    }
+
+        if (!skillUsed && baseAtk > 0) {
+            // 1. ✨ 力量命中補正 (STR Hit Bonus)
+            // 戰士靠氣勢與重武器壓制對方閃避，每 10 點 STR 抵銷 1% 閃避
+            let strHitBonus = player.str * 0.1;
+            let rawDodge = (monster.eva || 0) + ((monster.agi || 0) - player.agi) * 0.1;
+
+            // 最終閃避判定：至少保留 5% 的隨機性，最高不超過 70%
+            let finalDodge = Math.max(5, Math.min(70, rawDodge - strHitBonus));
+
+            let critChance = Math.min(30, player.critRate || 0);
+            if (hasPassive('sect_samurai_p2')) critChance += 15; // ✨ 武士被動：鬼人化 (+15%爆擊率)
+            let isCrit = (Math.random() * 100) < critChance;
+
+            // 判定是否命中
+            if (isCrit || (Math.random() * 100 >= finalDodge)) {
+                let mDef = monster.defVal || 0;
+
+                // ✨ 新增：紫藤被動的破甲效果
+                if (monster.poisoned > 0 && hasPassive('sect_ninja_p2')) {
+                    mDef *= 0.7; // 降低 30% 防禦
+                }
+
+                if (isCrit && hasPassive('sect_samurai_p2')) {
+                    mDef *= 0.8; // ✨ 武士被動：鬼人化 (爆擊無視20%護甲)
+                    applyBuff('samurai_frenzy', 3.0); // ✨ 賦予 3 秒狂暴 (+10%物攻)
+                }
+
+                // 2. ✨ 普攻傷害 (不帶自動破甲，回歸標準公式)
+                let finalDmg = Math.max(0, baseAtk - (mDef / 2));
+                finalDmg = Math.floor(finalDmg * (1 - (monster.dr || 0)));
+
+                // 力量流戰士的保底傷害：即便沒破甲，重兵器砸下去還是有保底感
+                let minDmg = Math.floor(player.str * 0.5);
+                if (finalDmg < minDmg) finalDmg = minDmg;
+
+                if (isCrit) finalDmg = Math.floor(finalDmg * 1.5);
+                let triggeredPoison = false;
+                let triggeredWind = false;
+                let windDmg = 0; // ✨ 獨立宣告風刃傷害
+
+                // ✨ 猛毒刃觸發判定
+                let poisonSourceName = "";
+                // ✨ 新機制：精確分辨是誰上的毒
+                if (player.sect === 'ninja' && Math.random() < 0.20) {
+                    monster.poisoned = 8.0; monster.poisonTick = 1.0;
+                    triggeredPoison = true;
+                    poisonSourceName = "【忍法・幻影】";
+                } else if (hasPassive('agi_combo1') && Math.random() < 0.15) {
+                    monster.poisoned = 8.0; monster.poisonTick = 1.0;
+                    triggeredPoison = true;
+                    poisonSourceName = "【猛毒刃】";
+                }
+
+                // ✨ 優化 3：風刃 (加入專屬的視覺跳字)
+                if (hasPassive('agi_combo2') && Math.random() < 0.20) {
+                    windDmg = Math.floor(baseAtk * 0.5 + getSpdVal() * 1.0);
+                    finalDmg += windDmg;
+                    triggeredWind = true;
+                }
+
+                // ✨ 新增：毒刃・暴發 (Ninja Synergy 聯動被動)
+                if (monster.poisoned > 0 && hasPassive('sect_ninja_poison_synergy') && Math.random() < 0.25) {
+                    // 將剩餘毒傷秒數視為「毒層數」來計算真實傷害
+                    let remainingTicks = Math.ceil(monster.poisoned / (hasPassive('sect_ninja_p2') ? 0.6 : 1.0));
+                    let detonateDmg = Math.floor(remainingTicks * getSpdVal() * 0.8);
+                    if (detonateDmg > 0) {
+                        finalDmg += detonateDmg; // 追加真實傷害 (直接加進結算)
+                        monster.poisoned = 0;    // 引爆後清空狀態
+                        showDmg('m-box', "毒爆 " + detonateDmg, '#2ecc71');
+                        writeCombatLog(`💥 <span style="color:#4a90e2">${player.name || "妳"}</span> 觸發 <b style="color:#2ecc71">【毒刃・暴發】</b>，瞬間引爆目標體內毒素，追加 ${detonateDmg} 點真實傷害！`, 'player');
+                    }
+                }
+
+                if (finalDmg <= 0) { finalDmg = 0; if (Math.random() < 0.05) log(`[警告] 攻擊無法穿透敵方護甲，傷害為 0！`, "#888"); }
+
+                if (isDummy) {
+                    combatState.zenDmgAccum += finalDmg;
+                    showDmg('m-box', finalDmg === 0 ? '0' : finalDmg, finalDmg === 0 ? '#666' : (isCrit ? '#ffeb3b' : 'white'));
+                    // ✨ 測試模式下記錄普通攻擊傷害並輸出日誌
+                    if (combatState.testMode && finalDmg > 0) {
+                        combatState.totalDmgDealt += finalDmg;
+                        combatState.lastDmg = finalDmg;
+                    }
+                    // ✨ 道場模式：輸出攻擊日誌到戰況分頁
+                    let pName = player.name || "妳";
+                    let dmgTxt = isCrit ? `<b style="color:#ffeb3b">爆擊！${finalDmg}</b>` : `<b style="color:white">${finalDmg}</b>`;
+                    writeCombatLog(`🗡️ <span style="color:#4a90e2">${pName}</span> 發動 <b style="color:#aaa">普攻</b>，對 <span style="color:#e74c3c">${monster.name}</span> 造成 ${dmgTxt} 點傷害。`, 'player');
+                    if (triggeredWind) {
+                        setTimeout(() => writeCombatLog(`🌪️ <span style="color:#4a90e2">${pName}</span> 觸發 <b style="color:#81ecec">風刃</b>，追加 ${windDmg} 點撕裂傷害！`, 'player'), 150);
+                    }
+                    if (triggeredPoison) {
+                        let d2 = triggeredWind ? 300 : 150;
+                        setTimeout(() => writeCombatLog(`🐍 <span style="color:#4a90e2">${pName}</span> 觸發 <b style="color:#2ecc71">${poisonSourceName}</b>，使木人陷入中毒狀態！`, 'player'), d2);
+                    }
+                } else if (monster.hp > 0) {
+                    monster.hp -= finalDmg;
+
+                    // ✨ 把忍者判定加在這裡！只要命中，強制把血量歸零
+                    if (combatState.isNinjaEvent && monster.id === 'm_raven_trial') {
+                        monster.hp = 0;
+                    }
+
+
+
+                    // 💥 第 1 段：普攻跳字與日誌
+                    showDmg('m-box', finalDmg === 0 ? '0' : finalDmg, finalDmg === 0 ? '#666' : (isCrit ? '#ffeb3b' : 'white'));
+                    let dmgTxt = isCrit ? `<b style="color:#ffeb3b">爆擊！${finalDmg}</b>` : `<b style="color:white">${finalDmg}</b>`;
+                    writeCombatLog(`🗡️ <span style="color:#4a90e2">${player.name || "妳"}</span> 發動 <b style="color:#aaa">普攻</b>，對 <span style="color:#e74c3c">${monster.name}</span> 造成 ${dmgTxt} 點傷害。`, 'player');
+
+                    // 🌪️ 第 2 段：風刃跳字與日誌 (延遲 150 毫秒)
+                    if (triggeredWind) {
+                        setTimeout(() => {
+                            showDmg('m-box', "風刃 " + windDmg, '#81ecec');
+                            writeCombatLog(`🌪️ <span style="color:#4a90e2">${player.name || "妳"}</span> 觸發 <b style="color:#81ecec">風刃</b>，追加了 ${windDmg} 點撕裂傷害！`, 'player');
+                        }, 150);
+                    }
+
+                    // 🐍 第 3 段：毒刃跳字與日誌 
+                    if (triggeredPoison) {
+                        let poisonDelay = triggeredWind ? 300 : 150;
+                        setTimeout(() => {
+                            showDmg('m-box', "劇毒附著", '#2ecc71');
+                            writeCombatLog(`🐍 <span style="color:#4a90e2">${player.name || "妳"}</span> 觸發 <b style="color:#2ecc71">${poisonSourceName}</b>，使 <span style="color:#e74c3c">${monster.name}</span> 陷入中毒狀態！`, 'player');
+                        }, poisonDelay);
+                    }
+                }
+            } else {
+                // 💨 閃避跳字與日誌
+                showDmg('m-box', "MISS", '#888');
+                writeCombatLog(`💨 <span style="color:#4a90e2">${player.name || "妳"}</span> 的攻擊被 <span style="color:#e74c3c">${monster.name}</span> <b style="color:#888">閃避</b> 了！`, 'player');
+            }
+        }
+    } // ✨ 玩家攻擊區塊結束
 
     if (player.activeHelper && HELPER_DB[player.activeHelper]) {
         let hdb = HELPER_DB[player.activeHelper];
@@ -1131,18 +1192,34 @@ function startBattleLoop() {
 
                         showDmg('m-box', counterDmg, '#e74c3c');
                         showDmg('p-box', "格擋反擊", '#e74c3c');
-                        writeCombatLog(`⚔️ <b style="color:#e74c3c">【燕返】</b> 觸發！${pName} 完美格擋了攻擊，並造成 <b style="color:white">${counterDmg}</b> 點反擊傷害！`);
+                        writeCombatLog(`⚔️ <b style="color:#e74c3c">【燕返】</b> 觸發！${pName} 完美格擋了攻擊，並造成 <b style="color:white">${counterDmg}</b> 點反擊傷害！`, 'player');
                     } else {
                         if (hasPassive('vit_thorns') && mDmg > 0) {
                             let refDmg = Math.floor(monster.atk * 0.5 + pDef * 1.5);
                             if (!isDefendDummy) monster.hp -= refDmg; // 真實戰鬥才扣木人血
                             showDmg('m-box', `反制 ${refDmg}`, '#e1b12c');
+                            writeCombatLog(`🛡️ <b style="color:#e1b12c">【反擊架勢】</b> 觸發！反彈了 <b style="color:white">${refDmg}</b> 點震懾傷害！`, 'player');
                         }
+
+                        // ✨ 武士：劍氣護體 5% 減傷
+                        if (hasPassive('sect_samurai_p1')) mDmg = Math.floor(mDmg * 0.95);
+
+                        // ✨ 神道：天狐結界 40% 減傷並轉化為治療
+                        if (player.buffs && player.buffs['shinto_shield'] > 0) {
+                            let absorb = Math.floor(mDmg * 0.4);
+                            mDmg -= absorb;
+                            player.hp = Math.min(getMaxHP(), player.hp + absorb);
+                            if (absorb > 0) {
+                                showDmg('p-box', `+${absorb} 結界吸收`, 'var(--quest)');
+                                writeCombatLog(`🦊 <b style="color:var(--quest)">【天狐結界】</b> 運轉，將 <b style="color:white">${absorb}</b> 點敵方傷害轉化為治癒！`, 'player');
+                            }
+                        }
+
                         player.hp -= mDmg;
                         showDmg('p-box', mDmg === 0 ? '0' : mDmg, mDmg === 0 ? '#888' : '#ff4757');
                         if (isDefendDummy) {
                             // ✨ 攻擊木人攻擊後自動恢復玩家HP，讓測試可以持續進行
-                            writeCombatLog(`🪵 <span style="color:#e74c3c">【攻擊木人】</span> 發動攻擊，造成 <b style="color:#ff4757">${mDmg}</b> 點傷害。`);
+                            writeCombatLog(`🪵 <span style="color:#e74c3c">【攻擊木人】</span> 發動攻擊，造成 <b style="color:#ff4757">${mDmg}</b> 點傷害。`, 'enemy');
                             // 道場模式：每次受擊後自動 50% 回血，確保測試能持續
                             setTimeout(() => {
                                 if (combatState.testMode && player.hp > 0) {
@@ -1151,6 +1228,8 @@ function startBattleLoop() {
                                     if (healBack > 0) showDmg('p-box', `+${healBack}`, 'var(--quest)');
                                 }
                             }, 500);
+                        } else {
+                            writeCombatLog(`🩸 <span style="color:#e74c3c">${monster.name}</span> 發動攻擊，對妳造成 <b style="color:#ff4757">${mDmg}</b> 點傷害。`, 'enemy');
                         }
 
                         // ✨ 神道被動：禍津反轉
@@ -1158,12 +1237,33 @@ function startBattleLoop() {
                             let healAmt = player.vit;
                             player.hp = Math.min(getMaxHP(), player.hp + healAmt);
                             showDmg('p-box', `+${healAmt} 反轉`, 'var(--quest)');
-                            writeCombatLog(`🌸 <span style="color:#4a90e2">${pName}</span> 觸發 <b style="color:var(--quest)">【禍津反轉】</b>，將苦難化為恩惠，回復了 <b style="color:white">${healAmt}</b> 點體力！`);
+                            writeCombatLog(`🌸 <span style="color:#4a90e2">${pName}</span> 觸發 <b style="color:var(--quest)">【禍津反轉】</b>，將苦難化為恩惠，回復了 <b style="color:white">${healAmt}</b> 點體力！`, 'player');
                         }
                     }
                 } else {
                     showDmg('p-box', "MISS", 'skyblue');
-                    if (isDefendDummy) writeCombatLog(`💨 <span style="color:#4a90e2">${player.name || "妳"}</span> 成功閃避了木人的攻擊！`);
+                    if (isDefendDummy) {
+                        writeCombatLog(`💨 <span style="color:#4a90e2">${player.name || "妳"}</span> 成功閃避了木人的攻擊！`, 'player');
+                    } else {
+                        writeCombatLog(`💨 <span style="color:#4a90e2">${player.name || "妳"}</span> 成功閃避了 <span style="color:#e74c3c">${monster.name}</span> 的攻擊！`, 'player');
+                    }
+
+                    // ✨ 修復：【秘傳・黃泉送葬】閃避反擊邏輯
+                    if (player.buffs && player.buffs['yomi_shrine'] > 0) {
+                        // 忍者的反擊：以速度為主，搭配部分基礎攻擊力
+                        let counterDmg = Math.floor(getSpdVal() * 2.5 + getAtkVal() * 1.0);
+                        let pName = player.name || "妳";
+
+                        if (!isDummy) monster.hp -= counterDmg;
+                        else if (combatState.testMode) {
+                            combatState.totalDmgDealt += counterDmg;
+                            combatState.lastDmg = counterDmg;
+                        }
+
+                        showDmg('m-box', counterDmg, '#2ecc71');
+                        showDmg('p-box', "黃泉反擊", '#2ecc71');
+                        writeCombatLog(`💀 <b style="color:#2ecc71">【黃泉送葬】</b> 觸發！${pName} 幽影閃動，發動致命反擊造成 <b style="color:white">${counterDmg}</b> 點傷害！`, 'player');
+                    }
                 }
             }
         }
@@ -1355,7 +1455,7 @@ function checkLevelUp() {
 }
 
 function spawn(boss = false) {
-    let m = maps[player.mapIdx]; if (!m) return; combatState.mobAtkTimer = 2.0; let mobId = "";
+    let m = maps[player.mapIdx]; if (!m) return; combatState.mobAtkTimer = 2.0; combatState.playerAtkTimer = 0; let mobId = "";
     if (m.name === "[修行] 幽靜道場") {
         // ✨ 測試模式：根據選擇生成不同木人
         mobId = testDummyType === 'defend' ? 'm_dojo_defend' : 'm_dojo_static';

@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>永夜之境 V0.7.3 (流派專屬技能已經更新)</title>
+    <title>永夜之境 V0.7.4 (技能功能稍微修正、劇情模式陸續推出中)</title>
+    <link rel="stylesheet" href="style.css">
     <style>
         :root {
             --bg: #0a0a0f;
@@ -472,6 +473,11 @@
             cursor: pointer;
         }
 
+        /* ✨ 修復高頻刷新導致的點擊丟失問題 */
+        .skill-slot * {
+            pointer-events: none;
+        }
+
         .skill-slot.active {
             border: 1px solid var(--skill);
             color: #fff;
@@ -681,7 +687,7 @@
     <div id="slot-screen">
         <div style="text-align: center; margin-bottom: 30px;">
             <h1 style="color:var(--cherry); margin-bottom: 5px;">⛩️ 永夜之境 ⛩️</h1>
-            <small style="color: #666; letter-spacing: 2px;">永夜之境 V0.7.3 (流派專屬技能已經更新)</small>
+            <small style="color: #666; letter-spacing: 2px;">永夜之境 V0.7.4 (技能調整，劇情模式研發中)</small>
         </div>
         <div id="slots-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
         </div>
@@ -831,10 +837,16 @@
                                 重置統計</button>
                         </div>
                     </div>
-                    <div style="text-align: right; margin-bottom: 5px; flex-shrink: 0;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; flex-shrink: 0;">
+                        <div class="inv-filter" style="margin-bottom:0;">
+                            <button class="f-btn active" id="cb-all" onclick="setCombatLogFilter('all')">綜合</button>
+                            <button class="f-btn" id="cb-player" onclick="setCombatLogFilter('player')">我方</button>
+                            <button class="f-btn" id="cb-enemy" onclick="setCombatLogFilter('enemy')">敵方</button>
+                        </div>
                         <button onclick="clearCombatLog()"
                             style="background: rgba(142, 68, 173, 0.6); color: white; border: 1px solid #9b59b6; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85em;">🗑️
-                            清空畫面</button>
+                            清空</button>
                     </div>
                     <div id="combat-log-area" class="custom-scrollbar"
                         style="flex: 1; min-height: 0; overflow-y: auto; text-align: left; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px;">
@@ -945,13 +957,17 @@
                     <h3 style="color:var(--mat); margin:5px 0;">⚒️ 鍛冶屋</h3>
                     <p style="margin:0; font-size:0.8em; color:#aaa;">法器強化與道具</p>
                 </div>
-                <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('shrine')">
+                <div class="slot-card" id="btn-shrine" style="width:auto; margin:0;" onclick="showSubView('shrine')">
                     <h3 style="color:var(--cherry); margin:5px 0;">⛩️ 神社</h3>
                     <p style="margin:0; font-size:0.8em; color:#aaa;">奉納與神賜潛力</p>
                 </div>
                 <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('sect')">
                     <h3 style="color:var(--skill); margin:5px 0;">⚔️ 流派</h3>
                     <p style="margin:0; font-size:0.8em; color:#aaa;">宗門武學之路</p>
+                </div>
+                <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('teahouse')">
+                    <h3 style="color:#2ecc71; margin:5px 0;">🍵 茶屋</h3>
+                    <p style="margin:0; font-size:0.8em; color:#aaa;">接取任務與情報</p>
                 </div>
 
                 <div class="slot-card" style="width:auto; margin:0;" onclick="showSubView('save')">
@@ -979,6 +995,7 @@
 
     <script src="db.js"></script>
     <script src="ui.js"></script>
+    <script src="story.js"></script>
     <script src="script.js"></script>
 
 </body>

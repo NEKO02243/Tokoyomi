@@ -15,6 +15,18 @@ function switchView(v) {
             executeSwitchView(v);
         }, true);
     }
+    
+    if (v === 'village' && player.hasSeenVillageIntro === false) {
+        let tVil = document.getElementById('t-village');
+        if (tVil) tVil.classList.remove('highlight-building');
+        
+        executeSwitchView(v);
+        if (typeof runVillageIntro === 'function') {
+            runVillageIntro();
+        }
+        return;
+    }
+
     executeSwitchView(v);
 }
 
@@ -67,6 +79,7 @@ function showSubView(s) {
     else if (s === 'shrine') { renderShrine(); }
     else if (s === 'shrine_shop') { renderShrineShop(); }
     else if (s === 'sect') { renderSect(); }
+    else if (s === 'teahouse') { renderTeahouse(); }
     else if (s === 'save') {
         c.innerHTML = `<h3>💾 紀錄點</h3>
             <button class="btn-action" style="width:100%; margin-bottom:15px;" id="btn-save-game" onclick="saveGameWithFeedback()">手動存檔</button>
@@ -96,6 +109,12 @@ function showSubView(s) {
             <button class="btn-action" style="width:100%; margin-bottom:10px; background:var(--gm);" onclick="applyGM()">✅ 套用數值與流派</button>
             <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--accent);" onclick="gmUnlockMaps()">🗺️ 解鎖全部地圖</button>
             <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--mat);" onclick="gmAddMats()">🎁 +100 全素材</button>`;
+    }
+
+    if (s === 'shrine' && player.hasSeenShrineIntro === false) {
+        if (typeof runShrineIntro === 'function') {
+            runShrineIntro();
+        }
     }
 }
 
@@ -355,7 +374,7 @@ function renderPath() {
                             <option value="4" ${player.skillGambits[i] == 4 ? 'selected' : ''}>我方 HP</option>
                             <option value="5" ${player.skillGambits[i] == 5 ? 'selected' : ''}>敵方 HP</option>
                         </select>`;
-                if (player.skillGambits[i] >= 4) {
+                if (player.skillGambits[i] == 4 || player.skillGambits[i] == 5) {
                     tacticHtml += `<span style="cursor:pointer; background:#333; color:var(--gold); padding:2px 8px; border-radius:3px; user-select:none;" onclick="toggleGambitOp(${i})">${player.skillGambitOps[i] === '<' ? '&lt;' : '>'}</span>
                     <input type="number" value="${player.skillGambitValues[i]}" style="width:50px; background:#000; color:white; border:1px solid #555; text-align:center;" onchange="updateGambitVal(${i}, this.value)"> %`;
                 }
@@ -796,6 +815,24 @@ function renderCasino() {
     }
 }
 
+function renderTeahouse() {
+    const c = el('sub-content'); if (!c) return;
+    
+    c.innerHTML = `<h3>🍵 茶屋「螢火」</h3>
+        <p style="color:#aaa; font-style:italic; margin-bottom:20px;">老闆娘 瑩：「遠道而來的旅人，辛苦了。外面風沙大、霧氣也重...快進來歇歇腳，喝杯熱茶暖暖身子吧。」</p>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+            <div class="slot-card" style="width:auto; margin:0; border-color:var(--quest);" onclick="showToast('任務系統準備中...即將開放！', 'var(--quest)')">
+                <h3 style="color:var(--quest); margin:5px 0;">📜 揭示板</h3><p style="margin:0; font-size:0.8em; color:#aaa;">承接委託與報酬</p>
+            </div>
+            <div class="slot-card" style="width:auto; margin:0; border-color:var(--accent);" onclick="showToast('玩家互動目前尚未開放', 'var(--danger)')">
+                <h3 style="color:var(--accent); margin:5px 0;">👥 玩家互動</h3><p style="margin:0; font-size:0.8em; color:#aaa;">交流情報與傳聞</p>
+            </div>
+        </div>
+        
+        <button class="btn-action" style="width:100%; background:#444; color:white;" onclick="backToVillage()">← 離開茶屋</button>`;
+}
+
 function renderSect() {
     const c = el('sub-content');
     if (!c) return;
@@ -1073,6 +1110,66 @@ function updateUI() {
     if (el('det-def')) { let nDefVal = curDef + (statPreview.vit * 1); let diff = nDefVal - curDef; el('det-def').innerHTML = `${curDef}${diff > 0 ? ` <span style="color:lime;">+${diff}</span>` : ""}`; }
     if (el('det-eva')) { let nEvaVal = Math.min(70, parseFloat(curEva) + (statPreview.agi * 0.1)); let diff = (nEvaVal - curEva).toFixed(1); el('det-eva').innerHTML = `${curEva}${diff > 0 ? ` <span style="color:lime;">+${diff}%</span>` : ""}%`; }
 
+    // ✨ 動態生成與更新我方攻擊跑條 (Action Bar)
+    let pAtkBar = el('p-atk-bar');
+    let pHpBar = el('p-hp-bar');
+    if (!pAtkBar && pHpBar) {
+        let pContainer = pHpBar.parentNode;
+        if (pContainer && pContainer.parentNode) {
+            let barWrapper = document.createElement('div');
+            // ✨ 減輕視覺壓力：降低高度、移除黑邊框，改用柔和底色
+            barWrapper.style.cssText = "width:100%; height:3px; background:rgba(255,255,255,0.05); margin-bottom:4px; border-radius:2px; overflow:hidden;";
+            // ✨ 拔除刺眼的發光 (box-shadow)，改用柔和的漸層色
+            barWrapper.innerHTML = `<div id="p-atk-bar" style="height:100%; width:0%; background:linear-gradient(90deg, rgba(85,239,196,0.3) 0%, rgba(85,239,196,0.9) 100%); transition:width 0.1s linear;"></div>`;
+            pContainer.parentNode.insertBefore(barWrapper, pContainer);
+        }
+    }
+
+    // ✨ 動態生成與更新敵方攻擊跑條 (Action Bar)
+    let mAtkBar = el('m-atk-bar');
+    let mHpBar = el('m-hp-bar');
+    if (!mAtkBar && mHpBar) {
+        let mContainer = mHpBar.parentNode;
+        if (mContainer && mContainer.parentNode) {
+            let barWrapper = document.createElement('div');
+            barWrapper.style.cssText = "width:100%; height:3px; background:rgba(255,255,255,0.05); margin-bottom:4px; border-radius:2px; overflow:hidden;";
+            barWrapper.innerHTML = `<div id="m-atk-bar" style="height:100%; width:0%; background:linear-gradient(90deg, rgba(255,71,87,0.3) 0%, rgba(255,71,87,0.9) 100%); transition:width 0.1s linear;"></div>`;
+            mContainer.parentNode.insertBefore(barWrapper, mContainer);
+        }
+    }
+
+    // 更新我方跑條進度
+    if (el('p-atk-bar')) {
+        let pMax = Math.max(0.25, 1.5 / (1 + player.agi * 0.008));
+        
+        // ✨ 極速防閃爍機制：當攻速極快 (<= 0.4秒) 時，跑條不再頻繁歸零，改為常駐的「疾風狀態」
+        if (pMax <= 0.4) {
+            el('p-atk-bar').style.transition = "opacity 0.5s ease-in-out";
+            el('p-atk-bar').style.width = "100%";
+            el('p-atk-bar').style.opacity = "0.7"; // 半透明狀態，不刺眼
+        } else {
+            el('p-atk-bar').style.opacity = "1";
+            let pCur = pMax - (combatState.playerAtkTimer || 0);
+            let pct = Math.max(0, Math.min(100, (pCur / pMax) * 100));
+            el('p-atk-bar').style.transition = pct < 5 ? "none" : "width 0.1s linear"; // 防止重置時產生倒退動畫
+            el('p-atk-bar').style.width = pct + "%";
+        }
+    }
+
+    // 更新敵方跑條進度
+    if (el('m-atk-bar')) {
+        let isDefendDummy = player.mapIdx === 0 && monster.id === 'm_dojo_defend';
+        let mMax = isDefendDummy ? 2.5 : 2.0;
+        if (monster && monster.atk > 0) {
+            let mCur = mMax - (combatState.mobAtkTimer || 0);
+            let pct = Math.max(0, Math.min(100, (mCur / mMax) * 100));
+            el('m-atk-bar').style.transition = pct < 5 ? "none" : "width 0.1s linear";
+            el('m-atk-bar').style.width = pct + "%";
+        } else {
+            el('m-atk-bar').style.width = "0%"; // 靜止木人或無攻擊力的怪物不跑條
+        }
+    }
+
     if (el('p-hp-bar')) el('p-hp-bar').style.width = (player.hp / getMaxHP() * 100) + "%";
     if (el('p-hp-text')) { if (isReviving) el('p-hp-text').innerHTML = `<span style="color:var(--gold);">💀 重塑中...</span>`; else el('p-hp-text').innerText = `${Math.floor(player.hp)} / ${getMaxHP()}`; }
     if (el('p-exp-bar')) el('p-exp-bar').style.width = (player.exp / player.next * 100) + "%";
@@ -1102,7 +1199,7 @@ function updateUI() {
     }
 
     if (el('m-name')) el('m-name').innerHTML = monster.name;
-    let mHpBar = el('m-hp-bar'); let mHpText = el('m-hp-text'); let mSubInfo = el('m-sub-info');
+    mHpBar = el('m-hp-bar'); let mHpText = el('m-hp-text'); let mSubInfo = el('m-sub-info');
     if (player.mapIdx === 0) {
         if (mHpBar) { mHpBar.className = 'zen-fill'; mHpBar.style.width = (combatState.zenTimer / 20 * 100) + "%"; } if (mHpText) mHpText.innerText = "修練中..."; if (mSubInfo) mSubInfo.innerHTML = `累積威力: <span style="color:var(--gold)">${combatState.zenDmgAccum}</span>`;
 
@@ -1126,7 +1223,16 @@ function updateUI() {
         lbl.innerHTML = `<input type="checkbox" id="repeat-boss-check" onchange="player.repeatBoss = this.checked;" style="transform:scale(1.2);"> 重複本關`;
         lbl.style.cssText = "color:var(--quest); font-size: 0.95em; cursor: pointer; display:flex; align-items:center; gap:5px; margin-left:10px;";
         if (player.repeatBoss) lbl.querySelector('input').checked = true;
-        el('auto-boss-check').parentNode.parentNode.insertBefore(lbl, el('revive-count').parentNode);
+        
+        let targetContainer = el('auto-boss-check').parentNode ? el('auto-boss-check').parentNode.parentNode : null;
+        let reviveNode = el('revive-count');
+        if (targetContainer) {
+            if (reviveNode && reviveNode.parentNode && reviveNode.parentNode.parentNode === targetContainer) {
+                targetContainer.insertBefore(lbl, reviveNode.parentNode);
+            } else {
+                targetContainer.appendChild(lbl);
+            }
+        }
     }
 
     let pCount = el('potion-count'); if (pCount && player.potions && player.potions[player.selectedPotion] !== undefined) pCount.innerText = player.potions[player.selectedPotion];
@@ -1166,8 +1272,8 @@ function updateUI() {
 
             let sk = skillDB[sid];
             let isAct = sk.type === 'active';
-            let isGambitReady = isAct ? checkGambit(i) : true;
-            slotEl.style.opacity = (isAct && !isGambitReady) ? "0.4" : "1.0";
+            let isOnCd = combatState.skillCds[i] > 0;
+            slotEl.style.opacity = (isAct && isOnCd) ? "0.4" : "1.0";
             slotEl.className = `skill-slot ${isAct ? 'active' : 'passive'}`;
             let html = `<b style="color:${sk.color}">${sk.name}</b>`;
             if (isAct && combatState.skillCds[i] > 0) {
@@ -1209,20 +1315,41 @@ function showDmg(tid, txt, col) {
     } catch (err) { }
 }
 
-// --- 2. ✨ 全新的「敘事型」戰鬥日誌寫入器 ---
-function writeCombatLog(htmlMsg) {
+let currentCombatLogFilter = 'all';
+
+function setCombatLogFilter(type) {
+    currentCombatLogFilter = type;
+    document.querySelectorAll('#combat-log-wrapper .f-btn').forEach(b => b.classList.remove('active'));
+    let activeBtn = el(`cb-${type}`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const items = document.querySelectorAll('.combat-log-item');
+    items.forEach(item => {
+        if (type === 'all' || item.dataset.type === type) {
+            item.style.display = 'block';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+    let cl = el('combat-log-area');
+    if (cl && typeof currentLogTab !== 'undefined' && currentLogTab === 'combat') cl.scrollTop = 0;
+}
+
+// --- 2. ✨ 支援分類的「敘事型」戰鬥日誌寫入器 ---
+function writeCombatLog(htmlMsg, type = 'system') {
     try {
         const cl = el('combat-log-area');
         if (!cl) return;
         if (cl.innerHTML.includes("戰鬥尚未開始")) cl.innerHTML = "";
 
-        let logLine = `<div style="font-size:0.9em; padding:5px 5px; border-bottom:1px solid rgba(255,255,255,0.05); line-height:1.5; color:#ccc;">${htmlMsg}</div>`;
+        let displayStyle = (currentCombatLogFilter === 'all' || currentCombatLogFilter === type) ? 'block' : 'none';
+        let logLine = `<div class="combat-log-item" data-type="${type}" style="display:${displayStyle}; font-size:0.9em; padding:5px 5px; border-bottom:1px solid rgba(255,255,255,0.05); line-height:1.5; color:#ccc;">${htmlMsg}</div>`;
 
         // ✨ 改變 1：'afterbegin' 代表把新的文字插在最上方
         cl.insertAdjacentHTML('afterbegin', logLine);
 
         // ✨ 改變 2：因為最舊的文字會被擠到最下面，所以超過 40 行時，要刪掉「最後一個 (last)」
-        if (cl.children.length > 40) cl.lastElementChild.remove();
+        if (cl.children.length > 50) cl.lastElementChild.remove(); // 加大容量到 50 筆
 
         // ✨ 改變 3：讓捲軸永遠停留在最上方，不用往下滾
         if (typeof currentLogTab !== 'undefined' && currentLogTab === 'combat') cl.scrollTop = 0;

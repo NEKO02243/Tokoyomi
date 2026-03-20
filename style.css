@@ -1,0 +1,87 @@
+/* 1. 背景遮罩：讓世界靜止，焦點在對話上 */
+.story-mode-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7); /* 稍微暗一點才有電影感 */
+    backdrop-filter: blur(4px);    /* 這是關鍵！背景會模糊化，超高級 */
+    z-index: 1999;
+    display: none;
+    pointer-events: all;           /* 阻擋下方所有操作 */
+}
+
+/* 2. 和風對話框：移動到畫面 60% 的高度，更像視覺小說 */
+.dialog-overlay {
+    position: fixed;
+    top: 60%;                     /* 改為從上面算，放在中間偏下 */
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    max-width: 600px;
+    min-height: 140px;
+    /* 增加一點螢黃色的微光邊緣，呼應螢火茶屋 */
+    background: linear-gradient(180deg, rgba(30, 25, 20, 0.95) 0%, rgba(15, 10, 5, 0.98) 100%);
+    border: 1px solid rgba(212, 175, 55, 0.4);
+    border-left: 4px solid #d4af37; /* 左側加粗金色邊框，增加設計感 */
+    border-right: 4px solid #d4af37;
+    padding: 30px;
+    box-sizing: border-box;
+    z-index: 2000;
+    font-family: 'Noto Serif TC', serif;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 15px rgba(212, 175, 55, 0.1);
+    display: none;
+    border-radius: 4px;
+}
+
+/* 3. 名字標籤：更有緞帶感 */
+.dialog-name-tag {
+    position: absolute;
+    top: -15px;
+    left: 20px;
+    background: linear-gradient(90deg, #96281b 0%, #c0392b 100%);
+    color: #fff;
+    padding: 4px 25px;
+    font-weight: bold;
+    border: 1px solid #d4af37;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+    letter-spacing: 3px;
+    font-size: 1.1em;
+}
+
+/* 4. 對話內容：文字加大且稍微留白 */
+.dialog-text {
+    color: #e0e0e0;
+    font-size: 1.2em;
+    line-height: 1.8;
+    margin: 0;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    text-align: left; /* 靠左對齊比較好閱讀 */
+}
+
+/* 5. 繼續指示：改成一個會呼吸的螢黃色小點 */
+.dialog-next-icon {
+    position: absolute;
+    bottom: 12px;
+    right: 20px;
+    color: #d4af37;
+    font-size: 0.8em;
+    letter-spacing: 1px;
+    opacity: 0.8;
+    animation: blink 1.5s infinite;
+}
+
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+/* 高亮引導建築 */
+.highlight-building {
+    animation: glow-building 1.5s infinite;
+    border-color: #e74c3c !important;
+}
+
+@keyframes glow-building {
+    0% { box-shadow: 0 0 5px #e74c3c; }
+    50% { box-shadow: 0 0 20px #e74c3c; }
+    100% { box-shadow: 0 0 5px #e74c3c; }
+}
