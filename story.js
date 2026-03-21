@@ -95,7 +95,7 @@ function runVillageIntro() {
         StoryManager.show("巫女 美香", "雖然這附近有神宮的靈氣保佑，但那些野獸確實變得很兇猛。你能平安走進來，難道以前也受過什麼特別的訓練嗎？", () => {
             StoryManager.show("巫女 美香", "哎呀，你看起來一身寒氣，別在門口發呆了，跟我來！", () => {
                 StoryManager.show("巫女 美香", "螢姊姊的茶早就泡好了，涼了就可惜啦，快進去！", () => {
-                    
+
                     // 開始黑幕轉場特效
                     StoryManager.hide();
                     let fade = document.createElement('div');
@@ -108,17 +108,17 @@ function runVillageIntro() {
                     fade.style.zIndex = '3000';
                     fade.style.pointerEvents = 'all'; // 阻擋玩家在這段期間亂點
                     document.body.appendChild(fade);
-                    
+
                     // 觸發淡入
                     setTimeout(() => { fade.style.opacity = '1'; }, 10);
-                    
+
                     // 等待 0.5 秒全黑後切換畫面，並開始淡出
                     setTimeout(() => {
                         if (typeof showSubView === 'function') showSubView('teahouse');
-                        
+
                         setTimeout(() => {
                             fade.style.opacity = '0';
-                            
+
                             // 無縫接軌螢火茶屋的劇情
                             StoryManager.show("老闆娘 螢", "誒呀，是美香呀。今天也帶來了新客人呢，歡迎光臨「螢火茶屋」，我是老闆娘 螢。", () => {
                                 StoryManager.show("巫女 美香", "嘿嘿，螢姊姊！這是我剛才在「靜謐荒野」救下來的旅人喔，他的身手可厲害了！", () => {
@@ -134,7 +134,7 @@ function runVillageIntro() {
                                                             if (typeof showToast === 'function') showToast("你喝下了熱茶，感到溫暖的力量湧上全身。", "#e67e22");
                                                             if (typeof updateUI === 'function') updateUI();
                                                             saveGame(false);
-                                                            
+
                                                             // 解鎖畫面讓玩家自由參觀
                                                             if (typeof backToVillage === 'function') backToVillage();
                                                         });
@@ -145,7 +145,7 @@ function runVillageIntro() {
                                     });
                                 });
                             });
-                            
+
                             // 淡出完成後移除 DOM
                             setTimeout(() => { fade.remove(); }, 500);
                         }, 200); // 稍微停頓 0.2 秒再淡出更有感覺
@@ -158,7 +158,7 @@ function runVillageIntro() {
 
 function runShrineIntro() {
     StoryManager.show("巫女 美香", "喔！你來啦！螢姊姊的茶喝完了嗎？歡迎來到我們村子的守護之地——宵月神社！", () => {
-        
+
         let subView = document.getElementById('sub-view');
         if (subView) {
             subView.style.transition = 'transform 3s cubic-bezier(0.25, 1, 0.5, 1)';
@@ -166,11 +166,11 @@ function runShrineIntro() {
         }
 
         StoryManager.show("巫女 美香", "雖然這裡比不上後山上的神宮那麼宏偉，但在這兒祈禱的話...也許，神女大人也是能收到你許下的願望喔。", () => {
-            
+
             if (subView) {
                 subView.style.transform = 'scale(1) translateY(0)';
             }
-            
+
             StoryManager.show("巫女 美香", "不過記得，沒事不要去後山那邊，那邊的神宮可不是誰都能去的呢。好啦，隨便看看吧，別客氣！", () => {
                 StoryManager.hide();
                 player.hasSeenShrineIntro = true;

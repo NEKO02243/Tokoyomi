@@ -746,10 +746,10 @@ function getEvaPercent() {
     // 最終天花板鎖定在 80% (確保滿裝滿敏的忍者不浪費屬性)
     return Math.min(80, base);
 }
-function getMaxHP() { 
-    let base = Math.floor(player.vit * 20 + 100); 
+function getMaxHP() {
+    let base = Math.floor(player.vit * 20 + 100);
     if (hasPassive('sect_shinto_p1')) base = Math.floor(base * 1.15); // ✨ 神道：神明庇佑 (+15%HP)
-    return base; 
+    return base;
 }
 
 function executeSkill(slotIdx) {
@@ -1455,7 +1455,7 @@ function checkLevelUp() {
 }
 
 function spawn(boss = false) {
-    let m = maps[player.mapIdx]; if (!m) return; combatState.mobAtkTimer = 2.0; combatState.playerAtkTimer = 0; let mobId = "";
+    let m = maps[player.mapIdx]; if (!m) return; combatState.mobAtkTimer = 2.0; let mobId = "";
     if (m.name === "[修行] 幽靜道場") {
         // ✨ 測試模式：根據選擇生成不同木人
         mobId = testDummyType === 'defend' ? 'm_dojo_defend' : 'm_dojo_static';
@@ -1532,12 +1532,12 @@ function stopWork() {
         log(`💰 老闆：「辛苦啦！」獲得了 $${earn.toLocaleString()}。`, "var(--gold)");
         if (typeof showToast === 'function') showToast(`+ $${earn} 金幣`, "var(--gold)");
 
-        // ✨ 老闆的私下犒賞：打工素材掉落 (全等級適用)
+        // ✨ 老闆的私下犒賞：設定最低打工時間防呆 (至少 10 分鐘)
         let workMinutes = Math.floor(elapsedSecs / 60);
-        if (workMinutes >= 1 || player.lvl <= 30) { // 至少工作 1 分鐘，或新手無條件觸發
-            let dropChance = player.lvl <= 30 ? 1.0 : (0.3 + workMinutes * 0.05); // 新手 100% 掉落，老手依工作時長增加機率
+        if (workMinutes >= 10) { 
+            let dropChance = player.lvl <= 30 ? 1.0 : Math.min(1.0, 0.3 + workMinutes * 0.05); 
             if (Math.random() < dropChance) {
-                let extraStone = player.lvl <= 30 ? (Math.floor(Math.random() * 3) + 2) : 1;
+                let extraStone = player.lvl <= 30 ? (Math.floor(Math.random() * 3) + 2) : Math.floor(workMinutes / 10);
                 player.mats['m0'] = (player.mats['m0'] || 0) + extraStone;
                 log(`🎁 【老闆的犒賞】老闆偷偷塞了 ${extraStone} 塊強化石給妳當作獎勵！`, "var(--quest)");
                 if (typeof showToast === 'function') showToast(`額外獲得 妖化鐵砂 x${extraStone}`, "var(--quest)");

@@ -15,11 +15,11 @@ function switchView(v) {
             executeSwitchView(v);
         }, true);
     }
-    
+
     if (v === 'village' && player.hasSeenVillageIntro === false) {
         let tVil = document.getElementById('t-village');
         if (tVil) tVil.classList.remove('highlight-building');
-        
+
         executeSwitchView(v);
         if (typeof runVillageIntro === 'function') {
             runVillageIntro();
@@ -249,6 +249,7 @@ function promptWashStar() {
         true
     );
 }
+let _lastBagKey = "";
 function renderBag() {
     const listEl = el('inv-list'); if (!listEl) return;
 
@@ -256,35 +257,66 @@ function renderBag() {
     document.querySelectorAll('.bag-qty-input').forEach(el => inputStates[el.dataset.id] = el.value);
     document.querySelectorAll('.bag-check').forEach(el => checkStates[el.dataset.id] = el.checked);
 
-    listEl.innerHTML = ""; let bagItems = [];
+    let bagItems = [];
     for (let k in player.potions) if (player.potions[k] > 0) bagItems.push({ id: k, count: player.potions[k] });
     for (let k in player.mats) if (player.mats[k] > 0) bagItems.push({ id: k, count: player.mats[k] });
     let filtered = bagItems.filter(item => { if (currentInvFilter === 'all') return true; return getItem(item.id).cat === currentInvFilter; });
-    if (filtered.length === 0) { listEl.innerHTML = "<div style='color:#555; text-align:center; padding:30px;'>此類別目前沒有物品</div>"; return; }
+    
+    // 生成這組行囊的「物件結構特徵碼 (Pattern)」
+    // 如果裝滿了相同種類的道具，特徵碼就不會改變 (例如 "all_p1,m0,mat_perfect")
+    let currentBagKey = currentInvFilter + "_" + filtered.map(i => i.id).join(",");
 
-    filtered.forEach(slot => {
-        let db = getItem(slot.id);
-        let savedVal = inputStates[slot.id] || 1;
-        let isChecked = checkStates[slot.id] ? "checked" : "";
-        let checkHtml = ""; let qtyInputHtml = "";
-
-        if (db.sellable) {
-            checkHtml = `<input type="checkbox" class="bag-check" data-id="${slot.id}" ${isChecked}>`;
-            qtyInputHtml = `<span style="font-size:12px; color:#555;">賣出:</span><input type="number" class="bag-qty-input" data-id="${slot.id}" value="${savedVal}" min="1" max="${slot.count}" style="width:50px; font-size:1.1em; text-align:center;">`;
-        } else if (db.id === 'wash_star') {
-            checkHtml = `<div style="width:16px;"></div>`;
-            qtyInputHtml = `<button class="btn-action" style="padding:4px 10px; font-size:0.9em; background:var(--quest); color:black;" onclick="promptWashStar()">✨ 使用</button>`;
-        } else if (db.cat === 'sp' && db.id !== 'c_shrine' && db.id !== 'revive' && !db.id.startsWith('mat_')) {
-            checkHtml = `<div style="width:16px;"></div>`;
-            qtyInputHtml = `<button class="btn-action" style="padding:4px 10px; font-size:0.9em; background:var(--gold); color:black;" onclick="useShrineBuffItem('${db.id}')">✨ 使用</button>`;
-        } else {
-            checkHtml = `<div style="width:16px;"></div>`;
-            qtyInputHtml = `<span style="color:#444; font-size:12px;">-</span>`;
+    if (filtered.length === 0) { 
+        if (_lastBagKey !== "empty") {
+            listEl.innerHTML = "<div style='color:#555; text-align:center; padding:30px;'>此類別目前沒有物品</div>"; 
+            _lastBagKey = "empty";
         }
+        return; 
+    }
 
-        listEl.innerHTML += `<div class="inv-row ${db.cat}">${checkHtml}<div style="flex:1; margin-left:10px;"><div style="color:#eee; font-size:1.05em;">${db.name} <b style="color:var(--gold)">x${slot.count}</b></div><div style="color:#666; font-size:0.85em;">${db.sellable ? `單價: $${db.sellPrice}` : `<span style="color:var(--quest)">重要物品</span>`}</div></div><div style="text-align:right; display:flex; align-items:center; gap:5px;">${qtyInputHtml}</div></div>`;
-    });
-    listEl.innerHTML += `<div style="position: sticky; bottom: 0; background: #000; padding: 12px 0; border-top: 1px solid #333; margin-top: 10px; text-align:center;"><button class="btn-action" style="width:90%; background:linear-gradient(180deg, #ffd700, #b8860b); color:#000; border-radius:20px;" onclick="executeSelectedSell()">💰 賣出選中物品</button></div>`;
+    // 當「擁有的道具種類」不完全一樣時，才將整個 HTML 砍掉重繪
+    if (_lastBagKey !== currentBagKey) {
+        let htmlStr = "";
+        filtered.forEach(slot => {
+            let db = getItem(slot.id);
+            let savedVal = inputStates[slot.id] || 1;
+            let isChecked = checkStates[slot.id] ? "checked" : "";
+            let checkHtml = ""; let qtyInputHtml = "";
+
+            if (db.sellable) {
+                checkHtml = `<input type="checkbox" class="bag-check" data-id="${slot.id}" ${isChecked} onchange="renderBag()">`; // ✨ 新增 checkbox 狀態回寫
+                qtyInputHtml = `<span style="font-size:12px; color:#555;">賣出:</span><input type="number" class="bag-qty-input" data-id="${slot.id}" value="${savedVal}" min="1" max="${slot.count}" style="width:50px; font-size:1.1em; text-align:center;">`;
+            } else if (db.id === 'wash_star') {
+                checkHtml = `<div style="width:16px;"></div>`;
+                qtyInputHtml = `<button class="btn-action" style="padding:4px 10px; font-size:0.9em; background:var(--quest); color:black;" onclick="promptWashStar()">✨ 使用</button>`;
+            } else if (db.cat === 'sp' && db.id !== 'c_shrine' && db.id !== 'revive' && !db.id.startsWith('mat_')) {
+                checkHtml = `<div style="width:16px;"></div>`;
+                qtyInputHtml = `<button class="btn-action" style="padding:4px 10px; font-size:0.9em; background:var(--gold); color:black;" onclick="useShrineBuffItem('${db.id}')">✨ 使用</button>`;
+            } else {
+                checkHtml = `<div style="width:16px;"></div>`;
+                qtyInputHtml = `<span style="color:#444; font-size:12px;">-</span>`;
+            }
+
+            htmlStr += `<div class="inv-row ${db.cat}">${checkHtml}<div style="flex:1; margin-left:10px;"><div style="color:#eee; font-size:1.05em;">${db.name} <b id="bag-count-${slot.id}" style="color:var(--gold)">x${slot.count}</b></div><div style="color:#666; font-size:0.85em;">${db.sellable ? `單價: $${db.sellPrice}` : `<span style="color:var(--quest)">重要物品</span>`}</div></div><div style="text-align:right; display:flex; align-items:center; gap:5px;">${qtyInputHtml}</div></div>`;
+        });
+        htmlStr += `<div style="position: sticky; bottom: 0; background: #000; padding: 12px 0; border-top: 1px solid #333; margin-top: 10px; text-align:center;"><button class="btn-action" style="width:90%; background:linear-gradient(180deg, #ffd700, #b8860b); color:#000; border-radius:20px;" onclick="executeSelectedSell()">💰 賣出選中物品</button></div>`;
+        
+        listEl.innerHTML = htmlStr;
+        _lastBagKey = currentBagKey;
+    } else {
+        // ✨ 特徵碼一樣，表示按鈕沒變，我們只去偷偷換掉那幾個標籤裡的「數字」！
+        filtered.forEach(slot => {
+            let countEl = el(`bag-count-${slot.id}`);
+            if (countEl && countEl.innerText !== `x${slot.count}`) {
+                countEl.innerText = `x${slot.count}`;
+            }
+            // 動態更新可輸入的最大數量上限
+            let inputEl = document.querySelector(`.bag-qty-input[data-id="${slot.id}"]`);
+            if (inputEl) {
+               inputEl.max = slot.count;
+            }
+        });
+    }
 }
 
 function renderPath() {
@@ -410,6 +442,7 @@ function renderPath() {
 
 
 // ✨ V0.7.2 夥伴編隊大改版：清單過濾、詳細資料與大面板切換
+let _lastHelperState = "";
 function renderHelper() {
     const c = el('helper-area'); if (!c) return;
 
@@ -419,6 +452,17 @@ function renderHelper() {
         let hdb = HELPER_DB[hid];
         let timeStr = formatHelperTime(player.helperTimes[hid]);
         let isDanger = player.helperTimes[hid] < 60;
+
+        let activeState = "active_" + hid;
+        if (_lastHelperState === activeState) {
+            let tEl = el('helper-active-time');
+            if (tEl) {
+                tEl.innerText = timeStr;
+                tEl.style.color = isDanger ? 'var(--danger)' : 'var(--quest)';
+            }
+            return;
+        }
+        _lastHelperState = activeState;
 
         c.innerHTML = `
             <div style="margin-bottom:15px; text-align:center;">
@@ -430,7 +474,7 @@ function renderHelper() {
                 <p style="color:#aaa; font-size:0.9em; line-height:1.5;">${hdb.desc}</p>
                 <div style="margin:20px 0; background:#000; padding:12px; border-radius:6px; border:1px dashed #555;">
                     合約時數倒數：<br>
-                    <span style="color:${isDanger ? 'var(--danger)' : 'var(--quest)'}; font-size:1.5em; font-weight:bold; display:inline-block; margin-top:5px;">${timeStr}</span>
+                    <span id="helper-active-time" style="color:${isDanger ? 'var(--danger)' : 'var(--quest)'}; font-size:1.5em; font-weight:bold; display:inline-block; margin-top:5px;">${timeStr}</span>
                 </div>
                 <button class="btn-action" style="width:100%; background:#e67e22; color:white; font-size:1.1em; padding:10px;" onclick="toggleHelper('${hid}')">☕ 讓夥伴退下休息</button>
             </div>
@@ -439,6 +483,22 @@ function renderHelper() {
     }
 
     // 狀態 2: 沒有夥伴上陣，顯示「待命陣容清單」
+    let rosterStr = currentHelperFilter + "_";
+    let hasHelper = false;
+    let roster = [];
+    if (player.helperTimes) {
+        for (let hid in player.helperTimes) {
+            if (player.helperTimes[hid] > 0) {
+                hasHelper = true;
+                roster.push(hid);
+                rosterStr += hid + Math.floor(player.helperTimes[hid]);
+            }
+        }
+    }
+    
+    if (_lastHelperState === rosterStr) return;
+    _lastHelperState = rosterStr;
+
     let html = `
         <div class="inv-filter" style="margin-bottom:10px;">
             <button class="f-btn ${currentHelperFilter === 'all' ? 'active' : ''}" id="hb-all" onclick="setHelperFilter('all')">全部</button>
@@ -448,17 +508,6 @@ function renderHelper() {
         </div>
         <div style="display:flex; flex-direction:column; gap:8px;">
     `;
-
-    let hasHelper = false;
-    let roster = [];
-    if (player.helperTimes) {
-        for (let hid in player.helperTimes) {
-            if (player.helperTimes[hid] > 0) {
-                hasHelper = true;
-                roster.push(hid);
-            }
-        }
-    }
 
     if (!hasHelper) {
         html += `<div style="text-align:center; color:#666; padding:30px;">陣容空無一人...<br>請前往居酒屋招募夥伴。</div>`;
@@ -817,7 +866,7 @@ function renderCasino() {
 
 function renderTeahouse() {
     const c = el('sub-content'); if (!c) return;
-    
+
     c.innerHTML = `<h3>🍵 茶屋「螢火」</h3>
         <p style="color:#aaa; font-style:italic; margin-bottom:20px;">老闆娘 瑩：「遠道而來的旅人，辛苦了。外面風沙大、霧氣也重...快進來歇歇腳，喝杯熱茶暖暖身子吧。」</p>
         
@@ -1141,7 +1190,7 @@ function updateUI() {
     // 更新我方跑條進度
     if (el('p-atk-bar')) {
         let pMax = Math.max(0.25, 1.5 / (1 + player.agi * 0.008));
-        
+
         // ✨ 極速防閃爍機制：當攻速極快 (<= 0.4秒) 時，跑條不再頻繁歸零，改為常駐的「疾風狀態」
         if (pMax <= 0.4) {
             el('p-atk-bar').style.transition = "opacity 0.5s ease-in-out";
@@ -1223,7 +1272,7 @@ function updateUI() {
         lbl.innerHTML = `<input type="checkbox" id="repeat-boss-check" onchange="player.repeatBoss = this.checked;" style="transform:scale(1.2);"> 重複本關`;
         lbl.style.cssText = "color:var(--quest); font-size: 0.95em; cursor: pointer; display:flex; align-items:center; gap:5px; margin-left:10px;";
         if (player.repeatBoss) lbl.querySelector('input').checked = true;
-        
+
         let targetContainer = el('auto-boss-check').parentNode ? el('auto-boss-check').parentNode.parentNode : null;
         let reviveNode = el('revive-count');
         if (targetContainer) {
