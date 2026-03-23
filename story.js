@@ -77,14 +77,87 @@ function runIntro() {
                 player.hasSeenIntro = true;
                 if (typeof window !== 'undefined') window.isStoryPlaying = false; // 移除控制標記
                 saveGame(false);
-                if (window.currentView === 'battle' && !player.workStartTime) {
-                    window.isPaused = false;
+                if (currentView === 'battle' && !player.workStartTime) {
+                    isPaused = false;
                     if (typeof startBattleLoop === 'function') startBattleLoop();
                 }
 
                 // 增加高亮引導到結界之里按鈕
                 let tVil = document.getElementById('t-village');
                 if (tVil) tVil.classList.add('highlight-building');
+            });
+        });
+    });
+}
+
+// ✨ 全新實裝的：誠一竹林初遇 (含震動特效與前置裝備檢查)
+function runSeiichiEncounterLite() {
+    StoryManager.show("御前武士", "（喘著粗氣）中隊長...後方的怪物又補上來了！這已經不知道是第幾波攻擊了，這片林子的怪物根本不正常！", () => {
+        StoryManager.show("楠木 誠一", "（揮刀斬開一隻小鬼，手臂已在發抖）嘖，這就是所謂的消耗戰嗎...再這樣下去，大家連撤退的力氣都沒了...。", () => {
+
+            // 💡 觸發畫面震動特效
+            document.body.classList.add('screen-shake');
+            setTimeout(() => document.body.classList.remove('screen-shake'), 400); // 0.4秒後移除 class 以便下次觸發
+
+            StoryManager.show("玩家", "（妳及時介入戰鬥，用法器揮出凌厲的一擊，瞬間擊退了周圍的怪物！）", () => {
+                StoryManager.show("楠木 誠一", "（收刀拄地，對妳點了點頭）多謝了妳的協助。我是青衛隊的誠一...說來慚愧，我們這群人竟然被這些殺不完的小嘍囉耗盡了體力。", () => {
+                    StoryManager.show("楠木 誠一", "（指向竹林更深處）這片林子的異樣源頭，是前方那尊發狂的『荒廢石獅子』。只要它還在吸納周圍的氣息，這些小怪就會不斷重生。", () => {
+                        StoryManager.show("楠木 誠一", "但我帶來的弟兄已經到極限了...旅人，你看起來還有餘力。能不能請你先行一步去討伐那尊石獅子？", () => {
+                            StoryManager.show("楠木 誠一", "別擔心，我的人會守在這裡，幫妳截斷後方湧上來的怪群。妳只管專心對付前面那個大傢伙，後背就交給我們！", () => {
+                                StoryManager.hide();
+                                markStoryDone('seiichi_encounter_lite');
+                                if (typeof addItemToBag === 'function') addItemToBag('m_magic_core', 1);
+                                if (typeof showToast === 'function') showToast("誠一小隊已為您封鎖後路。", "var(--quest)");
+
+                                isPaused = false;
+                                if (player.mapIdx === 2 && maps[player.mapIdx].boss) { log("⚔️ 誠一的請求：荒廢石獅子降臨！", "var(--danger)"); spawn(true); } else { spawn(false); }
+                                if (currentView === 'battle' && typeof startBattleLoop === 'function') startBattleLoop(); // ✨ 確保劇情結束後自動開打
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+}
+
+// ✨ 新增：擊敗石獅子後的結算劇情
+function runSeiichiVictoryLite() {
+    StoryManager.show("楠木 誠一", "（看著轟然倒塌的石獅子，長長地舒了一口氣）太精彩了...沒想到妳真的憑一己之力討伐了這頭怪物。", () => {
+        StoryManager.show("楠木 誠一", "周圍的妖氣已經開始消散了，弟兄們也終於能喘口氣。這次真的欠妳一個天大的的人情。", () => {
+            StoryManager.show("楠木 誠一", "如果妳之後有機會來到「御庭」，請務必讓我們青衛隊好好招待妳。那麼，我們就先帶著傷兵撤退了，後會有期！", () => {
+                StoryManager.hide();
+                markStoryDone('seiichi_victory_lite'); // 標記劇情完成
+
+                // ✨ 贈送結算謝禮 (可選)
+                if (typeof addItemToBag === 'function') {
+                    addItemToBag('p5', 3); // 送 3 個百年靈芝
+                    if (typeof showToast === 'function') showToast("獲得 誠一的謝禮 (百年靈芝 x3)", "var(--quest)");
+                    log("🎁 楠木誠一臨走前塞給妳一些高級補給品。", "var(--quest)");
+                }
+
+                // 恢復遊戲循環，刷出下一張地圖的怪
+                isPaused = false;
+                spawn(false);
+                if (currentView === 'battle' && typeof startBattleLoop === 'function') startBattleLoop();
+            });
+        });
+    });
+}
+
+function runSmithyIntro() {
+    StoryManager.show("虎徹師傅", "<span style='color:#aaa; font-size:0.9em;'>（背景傳來規律的打鐵聲 叮、叮、當、當）</span><br><br>生面孔啊？這陣子除了那群穿得整整齊齊、目中無人的<b style='color:var(--danger)'>『御前武士』</b>，很少有外地人敢來這了。", () => {
+        StoryManager.show("虎徹師傅", "<span style='color:#aaa; font-size:0.9em;'>（師傅停下手上的錘子，用毛巾擦了擦汗，打量了妳一眼）</span><br><br>看妳全身都沒有帶一些裝備，這樣在野外戰鬥可是很危險的...", () => {
+            StoryManager.show("虎徹師傅", "<span style='color:#aaa; font-size:0.9em;'>（師傅轉身從凌亂的櫃檯下抓出三件看起來毫不起眼的舊護具，直接丟在桌上）</span><br><br>拿去吧。這不是什麼名貴貨，就是些能護住心脈跟手腳的<b style='color:var(--gold)'>『法器』</b>，就當作是送給妳的見面禮了。", () => {
+                StoryManager.show("虎徹師傅", "不過妳記好，這些護具現在只有基礎保暖的功能（數值皆為 +0）。想要發揮它真正的效果，帶足材料和錢再來找我吧。到那時候，我再幫妳進行<b style='color:var(--quest)'>『強化』</b>。", () => {
+                    StoryManager.show("虎徹師傅", "還呆站在那邊做什麼？還不快滾！不要耽誤我的訂單進度！魔物一直來，訂單根本做不完啊！", () => {
+                        StoryManager.hide();
+                        player.hasMetBlacksmith = true;
+                        saveGame(false);
+                        // ✨ 確保 UI 狀態更新
+                        if (typeof renderSmithy === 'function') renderSmithy();
+                    });
+                });
             });
         });
     });

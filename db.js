@@ -10,16 +10,19 @@ const EFFECT_MAP = {
     'samurai_parry': { field: 'parry', multiplier: 0, name: '燕返招架' },
     'yomi_shrine': { field: 'yomi', multiplier: 0, name: '黃泉領域' },
     'shinto_shield': { field: 'shield', multiplier: 0.6, name: '天狐結界' },
-    'samurai_frenzy': { field: 'atk', multiplier: 1.1, name: '鬼人狂暴' }
+    'samurai_frenzy': { field: 'atk', multiplier: 1.1, name: '鬼人狂暴' },
+    'hp_boost': { field: 'mhp', multiplier: 1.2, name: '體力增幅' },
+    'def_boost': { field: 'def', multiplier: 1.2, name: '防禦增幅' },
+    'eva_boost': { field: 'eva', additive: 10, name: '閃避增幅' }
 };
 
 const ITEM_DB = {
     // --- 補品類型道具 ---
     'p1': { id: 'p1', cat: 'rec', name: '生鮮野味', tag: '+50HP', cost: 15, value: 50, rate: 0, sellable: true, sellPrice: 3, shopAvailable: false, shopTab: 'rec', desc: '野外獲得的生肉，口感欠佳。' },
-    'p2': { id: 'p2', cat: 'rec', name: '醃製獸肉', tag: '+250HP', cost: 60, value: 250, rate: 0, sellable: true, sellPrice: 20, shopAvailable: true, shopTab: 'rec', desc: '萬屋特製的乾肉，補給量較高。' },
-    'p5': { id: 'p5', cat: 'rec', name: '百年靈芝', tag: '+800HP', cost: 400, value: 800, rate: 0, sellable: true, sellPrice: 150, shopAvailable: true, shopTab: 'rec', desc: '深山中採摘的靈藥，能迅速恢復大量體力。' },
+    'p2': { id: 'p2', cat: 'rec', name: '醃製獸肉', tag: '+150HP', cost: 40, value: 150, rate: 0, sellable: true, sellPrice: 15, shopAvailable: true, shopTab: 'rec', desc: '萬屋特製的乾肉，提供基礎的補給。' },
+    'p5': { id: 'p5', cat: 'rec', name: '百年靈芝', tag: '+400HP', cost: 200, value: 400, rate: 0, sellable: true, sellPrice: 80, shopAvailable: true, shopTab: 'rec', desc: '深山中採摘的靈藥，能迅速恢復一定體力。' },
     'p3': { id: 'p3', cat: 'rec', name: '行軍丸子', tag: '恢復30%', cost: 300, value: 0, rate: 0.3, sellable: true, sellPrice: 100, shopAvailable: true, shopTab: 'rec', desc: '專業配方煉製的補給，效果顯著。' },
-    'p6': { id: 'p6', cat: 'rec', name: '妖血秘藥', tag: '+2500HP', cost: 1500, value: 2500, rate: 0, sellable: true, sellPrice: 400, shopAvailable: true, shopTab: 'rec', desc: '以大妖之血煉製，能瞬間恢復極大生命值。' },
+    'p6': { id: 'p6', cat: 'rec', name: '妖血秘藥', tag: '+800HP', cost: 600, value: 800, rate: 0, sellable: true, sellPrice: 200, shopAvailable: true, shopTab: 'rec', desc: '以大妖之血煉製，能瞬間恢復大量生命值。' },
     'p4': { id: 'p4', cat: 'rec', name: '天照御神露', tag: '全恢復', cost: 3000, value: 0, rate: 1.0, sellable: true, sellPrice: 1000, shopAvailable: true, shopTab: 'rec', desc: '傳說中的神水，完全恢復。' },
 
     // --- 素材類型道具 ---
@@ -31,7 +34,32 @@ const ITEM_DB = {
     'm4': { id: 'm4', cat: 'mat', name: '雷精的碎核', sellable: true, sellPrice: 80, shopAvailable: false, shopTab: 'mat', desc: '強大雷電能量的結晶體，用於強化法器。' },
     'm5': { id: 'm5', cat: 'mat', name: '幽冥靈骨粉', sellable: true, sellPrice: 150, shopAvailable: false, shopTab: 'mat', desc: '黃泉邊界的骨粉，帶有強烈的死亡氣息。' },
     'm6': { id: 'm6', cat: 'mat', name: '彼岸花瓣', sellable: true, sellPrice: 300, shopAvailable: false, shopTab: 'mat', desc: '三途川畔盛開的紅花，據說能連通陰陽。' },
+    'mat_mushroom': { id: 'mat_mushroom', cat: 'mat', name: '香甜野菇', sellable: true, sellPrice: 4, shopAvailable: false, shopTab: 'mat', desc: '竹林與陰暗處生長的野菇，是優良的食材。' },
+    'mat_water': { id: 'mat_water', cat: 'mat', name: '清澈泉水', sellable: true, sellPrice: 3, shopAvailable: false, shopTab: 'mat', desc: '乾淨的泉水，可以用來熬湯。' },
+    
+    'mat_cabbage': { id: 'mat_cabbage', cat: 'mat', name: '清脆高麗菜', sellable: true, sellPrice: 10, shopAvailable: false, shopTab: 'mat', desc: '【食材】農田種植出的清脆高麗菜，適合煮湯。' },
+    'mat_wheat': { id: 'mat_wheat', cat: 'mat', name: '金黃小麥', sellable: true, sellPrice: 8, shopAvailable: false, shopTab: 'mat', desc: '【食材】農田種植出的小麥，可以加工成麵粉。' },
+    'mat_rice': { id: 'mat_rice', cat: 'mat', name: '飽滿稻米', sellable: true, sellPrice: 12, shopAvailable: false, shopTab: 'mat', desc: '【食材】農田種植出的稻米，是優質的主食。' },
+    'mat_radish': { id: 'mat_radish', cat: 'mat', name: '櫻桃蘿蔔', sellable: true, sellPrice: 8, shopAvailable: false, shopTab: 'mat', desc: '【食材】小巧可愛的蘿蔔，口感清甜。' },
 
+    'seed_radish': { id: 'seed_radish', cat: 'seed', name: '櫻桃蘿蔔種子', growTime: 1, yieldId: 'mat_radish', yieldQty: 3, exp: 20, cost: 30, sellable: true, sellPrice: 5, shopAvailable: true, shopTab: 'oth', desc: '【種子】基礎的農田種子，種植後 1 分鐘成熟，可收穫櫻桃蘿蔔。' },
+    'seed_cabbage': { id: 'seed_cabbage', cat: 'seed', name: '高麗菜種子', growTime: 2, yieldId: 'mat_cabbage', yieldQty: 2, exp: 30, cost: 40, sellable: true, sellPrice: 5, shopAvailable: true, shopTab: 'oth', desc: '【種子】種植後約 2 分鐘成熟，可收穫清脆高麗菜。' },
+    'seed_wheat': { id: 'seed_wheat', cat: 'seed', name: '小麥種子', growTime: 3, yieldId: 'mat_wheat', yieldQty: 3, exp: 40, cost: 50, sellable: true, sellPrice: 5, shopAvailable: true, shopTab: 'oth', desc: '【種子】種植後約 3 分鐘成熟，可收穫金黃小麥。' },
+    'seed_rice': { id: 'seed_rice', cat: 'seed', name: '稻米種子', growTime: 5, yieldId: 'mat_rice', yieldQty: 2, exp: 60, cost: 80, sellable: true, sellPrice: 10, shopAvailable: true, shopTab: 'oth', desc: '【種子】種植後約 5 分鐘成熟，可收穫飽滿稻米。' },
+
+    'bp_axe_iron': { id: 'bp_axe_iron', cat: 'sp', name: '製作圖：鐵製伐木斧', cost: 500, sellable: true, sellPrice: 50, shopAvailable: true, shopTab: 'oth', desc: '【製作圖】記載著高級斧頭的鍛造工法。在行囊中使用可永久解鎖。' },
+    'tool_hoe_1': { id: 'tool_hoe_1', cat: 'sp', name: '粗製鋤頭', maxDura: 20, cost: 100, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'oth', desc: '【工具】一階基礎農具。每次播種消耗 1 耐久。最大耐久: 20' },
+    'tool_rod_1': { id: 'tool_rod_1', cat: 'sp', name: '簡易釣竿', maxDura: 15, cost: 100, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'oth', desc: '【工具】一階基礎釣具。每釣起一條魚消耗 1 耐久。最大耐久: 15' },
+    'tool_axe_1': { id: 'tool_axe_1', cat: 'sp', name: '生鏽鐵斧', maxDura: 30, cost: 100, sellable: false, sellPrice: 0, shopAvailable: true, shopTab: 'oth', desc: '【工具】一階基礎伐木具。每次砍伐消耗 1 耐久。最大耐久: 30' },
+    'mat_fish_1': { id: 'mat_fish_1', cat: 'mat', name: '溪流小鰷魚', sellable: true, sellPrice: 8, shopAvailable: false, shopTab: 'mat', desc: '【水產】溪流中常見的小型魚類，可用於烹飪基礎料理。' },
+    'mat_fish_2': { id: 'mat_fish_2', cat: 'mat', name: '鮮美香魚', sellable: true, sellPrice: 25, shopAvailable: false, shopTab: 'mat', desc: '【水產】肉質鮮嫩的中型魚類，帶有一絲清香，適合鹽烤。' },
+    'mat_fish_3': { id: 'mat_fish_3', cat: 'mat', name: '靈湖錦鯉', sellable: true, sellPrice: 120, shopAvailable: false, shopTab: 'mat', desc: '【水產】吸收了微弱靈氣的稀有大魚，極難釣獲。' },
+    
+    'mat_wood_1': { id: 'mat_wood_1', cat: 'mat', name: '朽木', sellable: true, sellPrice: 5, shopAvailable: false, shopTab: 'mat', desc: '【木材】基礎的木材，可用於基礎建設。' },
+    'mat_wood_2': { id: 'mat_wood_2', cat: 'mat', name: '堅韌原木', sellable: true, sellPrice: 15, shopAvailable: false, shopTab: 'mat', desc: '【木材】結實的木材，質地精良。' },
+    'mat_wood_3': { id: 'mat_wood_3', cat: 'mat', name: '靈氣神木', sellable: true, sellPrice: 50, shopAvailable: false, shopTab: 'mat', desc: '【木材】蘊含微弱靈氣的稀有神木。' },
+
+    'm_magic_core': { id: 'm_magic_core', cat: 'sp', name: '異樣魔核', sellable: false, sellPrice: 0, shopAvailable: false, desc: '【任務道具】從竹林怪物身上掉落的變異核心，散發著不尋常的氣息。' },
     'mat_wolf': { id: 'mat_wolf', cat: 'sp', name: '狼王尖牙', sellable: false, sellPrice: 0, shopAvailable: false, desc: '飢餓野狼首領的尖牙，蘊含野性之力。' },
     'mat_lion': { id: 'mat_lion', cat: 'sp', name: '獅子石晶', sellable: false, sellPrice: 0, shopAvailable: false, desc: '荒廢石獅子崩壞後留下的核心。' },
     'mat_tengu': { id: 'mat_tengu', cat: 'sp', name: '天狗之羽', sellable: false, sellPrice: 0, shopAvailable: false, desc: '蒼雷大天狗落下的羽毛，帶有雷電之力。' },
@@ -70,10 +98,30 @@ const ITEM_DB = {
         sellable: false, sellPrice: 0,
         desc: '【忍者信物】通過渡鴉試煉後獲得的神秘卷軸。'
     },
+
+    // --- 🍲 料理道具 ---
+    'f_skewer': { id: 'f_skewer', cat: 'rec', name: '野菇烤肉串', tag: '持續恢復+50', regen: 50, duration: 8.0, sellable: true, sellPrice: 20, shopAvailable: false, shopTab: 'rec', desc: '【料理】散發誘人香氣的烤肉。使用後 8 秒內，每秒恢復 50 點生命值。' },
+    'f_soup': { id: 'f_soup', cat: 'rec', name: '清甜野菇湯', tag: '持續恢復+100', regen: 100, duration: 8.0, sellable: true, sellPrice: 15, shopAvailable: false, shopTab: 'rec', desc: '【料理】暖胃的熱湯。使用後 8 秒內，每秒恢復 100 點生命值。' },
+    'f_stew': { id: 'f_stew', cat: 'rec', name: '大雜燴燉肉', tag: '持續恢復+150', regen: 150, duration: 8.0, sellable: true, sellPrice: 30, shopAvailable: false, shopTab: 'rec', desc: '【料理】老闆娘的得意之作。使用後 8 秒內，每秒恢復 150 點生命值。' },
+    
+    'f_sushi': { id: 'f_sushi', cat: 'rec', name: '鮮魚握壽司', tag: '恢復+500', value: 500, duration: 0, sellable: true, sellPrice: 150, shopAvailable: false, shopTab: 'rec', desc: '【料理】使用新鮮魚肉與稻米捏製，能瞬間恢復大量體力。' },
+    'f_fish_soup': { id: 'f_fish_soup', cat: 'rec', name: '鮮魚燉菜湯', tag: '持續恢復+200', regen: 200, duration: 10.0, sellable: true, sellPrice: 120, shopAvailable: false, shopTab: 'rec', desc: '【料理】魚肉與高麗菜燉煮的鮮甜濃湯，10秒內每秒恢復200HP。' },
+    'f_radish_stew': { id: 'f_radish_stew', cat: 'rec', name: '蘿蔔野味燉肉', tag: '恢復+300', value: 300, duration: 0, sellable: true, sellPrice: 80, shopAvailable: false, shopTab: 'rec', desc: '【料理】蘿蔔與野味慢燉，能瞬間恢復 300HP。' },
+    'f_grilled_fish': { id: 'f_grilled_fish', cat: 'rec', name: '鹽烤香魚', tag: '恢復+250', value: 250, duration: 0, sellable: true, sellPrice: 60, shopAvailable: false, shopTab: 'rec', desc: '【料理】簡單撒鹽火烤的香魚，保留了最純粹的美味。' },
+    'f_bento': { id: 'f_bento', cat: 'rec', name: '豪華海陸便當', tag: '恢復+1000', value: 1000, duration: 0, sellable: true, sellPrice: 300, shopAvailable: false, shopTab: 'rec', desc: '【料理】結合了山珍海味的頂級便當，能瞬間恢復極大量體力。' },
 };
 
-
-
+// --- 🍲 食譜配方 ---
+const COOKING_RECIPES = [
+    { result: 'f_skewer', cost: 100, req: { 'p1': 5, 'mat_mushroom': 3 } },
+    { result: 'f_soup', cost: 200, req: { 'mat_mushroom': 7, 'mat_water': 5 } },
+    { result: 'f_stew', cost: 500, req: { 'p2': 3, 'mat_mushroom': 10, 'mat_water': 8 } },
+    { result: 'f_grilled_fish', cost: 150, req: { 'mat_fish_2': 1, 'mat_water': 2 } },
+    { result: 'f_radish_stew', cost: 250, req: { 'mat_radish': 3, 'p1': 2, 'mat_water': 3 } },
+    { result: 'f_fish_soup', cost: 350, req: { 'mat_fish_1': 2, 'mat_cabbage': 2, 'mat_water': 5 } },
+    { result: 'f_sushi', cost: 400, req: { 'mat_fish_3': 1, 'mat_rice': 2 } },
+    { result: 'f_bento', cost: 800, req: { 'mat_rice': 2, 'p2': 1, 'mat_fish_2': 1, 'mat_cabbage': 1 } }
+];
 
 const HELPER_DB = {
     'h1': { id: 'h1', role: 'phy', roleName: '武術', name: '流浪浪人・伍丸', cost: 300, duration: 30, skillType: 'attack', skillVal: 15, skillCd: 6, passive: (p) => { return { atk: 3, def: 0, eva: 0 }; }, workBonus: { rate: 1.2, label: "護衛：工錢提升 20%" }, desc: '追求劍道的浪人。增加基礎攻擊 3 點，每 6 秒施放一次斬擊（15點真實傷害）。' },
@@ -92,8 +140,8 @@ const MOB_DB = {
     // ✨ 修復：為所有首領補上豐厚的 exp 和 gold 屬性
     'b_wolf': { name: '飢餓的野狼', hp: 250, atk: 14, defVal: 5, dr: 0.10, eva: 10, agi: 30, exp: 50, gold: 30, isBoss: true, drops: [{ id: 'p5', chance: 0.50 }, { id: 'mat_wolf', chance: 1.0 }] },
     'r_gold_rabbit': { name: '✨ 貪婪金兔', hp: 120, atk: 5, defVal: 2, dr: 0.05, eva: 30, agi: 150, exp: 20, gold: 50, isBoss: false, drops: [{ id: 'p2', chance: 1.0 }, { id: 'm0', chance: 1.0 }] },
-    'm_dog': { name: '迷途犬', hp: 60, atk: 5, defVal: 3, dr: 0.05, eva: 10, agi: 20, exp: 6, gold: 5, drops: [{ id: 'p1', chance: 0.10 }, { id: 'm1', chance: 0.15 }] },
-    'm_bamboo': { name: '竹林小鬼', hp: 75, atk: 7, defVal: 5, dr: 0.08, eva: 5, agi: 15, exp: 7, gold: 6, drops: [{ id: 'm1', chance: 0.15 }, { id: 'm0', chance: 0.10 }] },
+    'm_dog': { name: '迷途犬', hp: 60, atk: 5, defVal: 3, dr: 0.05, eva: 10, agi: 20, exp: 6, gold: 5, drops: [{ id: 'p1', chance: 0.10 }, { id: 'm1', chance: 0.15 }, { id: 'mat_water', chance: 0.30 }] },
+    'm_bamboo': { name: '竹林小鬼', hp: 75, atk: 7, defVal: 5, dr: 0.08, eva: 5, agi: 15, exp: 7, gold: 6, drops: [{ id: 'm1', chance: 0.15 }, { id: 'm0', chance: 0.10 }, { id: 'mat_mushroom', chance: 0.25 }] },
     'b_lion': { name: '荒廢石獅子', hp: 500, atk: 22, defVal: 15, dr: 0.15, eva: 5, agi: 15, exp: 120, gold: 80, isBoss: true, drops: [{ id: 'p2', chance: 0.80 }, { id: 'mat_lion', chance: 1.0 }] },
     'm_tengu': { name: '天狗', hp: 150, atk: 10, defVal: 10, dr: 0.10, eva: 20, agi: 45, exp: 15, gold: 15, drops: [{ id: 'p2', chance: 0.10 }, { id: 'm2', chance: 0.15 }] },
     'm_yama': { name: '山童', hp: 180, atk: 13, defVal: 18, dr: 0.12, eva: 5, agi: 20, exp: 18, gold: 18, drops: [{ id: 'm2', chance: 0.15 }, { id: 'm0', chance: 0.10 }] },

@@ -6,6 +6,14 @@ function switchView(v) {
     if (player.workStartTime && v === 'battle') return openModal("正在工作中", "妳還在居酒屋幫忙，不能翹班去打怪！", "我知道了");
     if (isResting) return openModal("歇息中", "正在旅籠屋休息...", "等候");
 
+    if (player.fishingState && player.fishingState.active) {
+        return openModal("🎣 釣魚中", "妳正在全神貫注地垂釣，若要切換畫面，請先【收竿】！", "我知道了");
+    }
+    
+    if (player.woodState && player.woodState.active) {
+        return openModal("🪓 伐木中", "妳正在迷霧林場專注伐木，若要切換畫面，請先【收工】！", "我知道了");
+    }
+
     if (monster.isBoss && v !== 'battle') {
         return openModal("⚠️ 戰況危急", "確定要落荒而逃嗎？<br>退回村莊後，首領將會恢復狀態，您必須重新挑戰！", "落荒而逃", () => {
             player.autoBoss = false;
@@ -47,6 +55,8 @@ function executeSwitchView(v) {
 
 function backToVillage() {
     if (player.workStartTime) return log("📢 老闆：工還沒做完想溜啊？點擊紅色的收工按鈕才能走！", "var(--danger)");
+    if (player.fishingState && player.fishingState.active) return showToast("🎣 正在釣魚中，請先【收竿】！", "var(--danger)");
+    if (player.woodState && player.woodState.active) return showToast("🪓 正在伐木中，請先【收工】！", "var(--danger)");
     let sv = el('sub-view'); if (sv) sv.classList.add('hidden');
     let vm = el('village-menu'); if (vm) vm.classList.remove('hidden');
 }
@@ -73,13 +83,26 @@ function showSubView(s) {
     else if (s === 'helper_shop') { renderIzakaya('helper'); }
     else if (s === 'work') { renderIzakayaWork(); }
     else if (s === 'casino') { renderCasino(); }
-    else if (s === 'smith') { renderSmithy(); }
+    else if (s === 'smith') { 
+        renderSmithy(); 
+        if (player.hasMetBlacksmith === false && typeof runSmithyIntro === 'function') runSmithyIntro();
+    }
     else if (s === 'smith_shop') renderSmithyShop();
     else if (s === 'smith_sell') { renderSmithySell(); }
     else if (s === 'shrine') { renderShrine(); }
     else if (s === 'shrine_shop') { renderShrineShop(); }
     else if (s === 'sect') { renderSect(); }
-    else if (s === 'teahouse') { renderTeahouse(); }
+    else if (s === 'teahouse') { 
+        // 當村莊引導結束後，手動進來的才算真正見過茶屋
+        if (player.hasSeenVillageIntro) { player.hasSeenTeahouse = true; saveGame(false); }
+        renderTeahouse(); 
+    }
+    else if (s === 'expedition') { renderExpedition(); }
+    else if (s === 'cook') { renderCook(); }
+    else if (s === 'lifeSkills') { renderLifeSkills(); }
+    else if (s === 'farm') { renderFarm(); }
+    else if (s === 'fish') { renderFish(); }
+    else if (s === 'wood') { renderWood(); }
     else if (s === 'save') {
         c.innerHTML = `<h3>💾 紀錄點</h3>
             <button class="btn-action" style="width:100%; margin-bottom:15px;" id="btn-save-game" onclick="saveGameWithFeedback()">手動存檔</button>
@@ -111,7 +134,7 @@ function showSubView(s) {
             <button class="btn-action" style="width:100%; margin-bottom:15px; background:var(--mat);" onclick="gmAddMats()">🎁 +100 全素材</button>`;
     }
 
-    if (s === 'shrine' && player.hasSeenShrineIntro === false) {
+    if (s === 'shrine' && player.hasSeenShrineIntro === false && player.hasSeenTeahouse === true) {
         if (typeof runShrineIntro === 'function') {
             runShrineIntro();
         }
@@ -261,20 +284,17 @@ function renderBag() {
     for (let k in player.potions) if (player.potions[k] > 0) bagItems.push({ id: k, count: player.potions[k] });
     for (let k in player.mats) if (player.mats[k] > 0) bagItems.push({ id: k, count: player.mats[k] });
     let filtered = bagItems.filter(item => { if (currentInvFilter === 'all') return true; return getItem(item.id).cat === currentInvFilter; });
-    
     // 生成這組行囊的「物件結構特徵碼 (Pattern)」
     // 如果裝滿了相同種類的道具，特徵碼就不會改變 (例如 "all_p1,m0,mat_perfect")
     let currentBagKey = currentInvFilter + "_" + filtered.map(i => i.id).join(",");
 
-    if (filtered.length === 0) { 
-        if (_lastBagKey !== "empty") {
-            listEl.innerHTML = "<div style='color:#555; text-align:center; padding:30px;'>此類別目前沒有物品</div>"; 
-            _lastBagKey = "empty";
-        }
-        return; 
+    if (filtered.length === 0) {
+        listEl.innerHTML = "<div style='color:#555; text-align:center; padding:30px;'>此類別目前沒有物品</div>";
+        _lastBagKey = "empty";
+        return;
     }
 
-    // 當「擁有的道具種類」不完全一樣時，才將整個 HTML 砍掉重繪
+    // 當種類不完全一樣時，才將整個 HTML 砍掉重繪
     if (_lastBagKey !== currentBagKey) {
         let htmlStr = "";
         filtered.forEach(slot => {
@@ -300,11 +320,10 @@ function renderBag() {
             htmlStr += `<div class="inv-row ${db.cat}">${checkHtml}<div style="flex:1; margin-left:10px;"><div style="color:#eee; font-size:1.05em;">${db.name} <b id="bag-count-${slot.id}" style="color:var(--gold)">x${slot.count}</b></div><div style="color:#666; font-size:0.85em;">${db.sellable ? `單價: $${db.sellPrice}` : `<span style="color:var(--quest)">重要物品</span>`}</div></div><div style="text-align:right; display:flex; align-items:center; gap:5px;">${qtyInputHtml}</div></div>`;
         });
         htmlStr += `<div style="position: sticky; bottom: 0; background: #000; padding: 12px 0; border-top: 1px solid #333; margin-top: 10px; text-align:center;"><button class="btn-action" style="width:90%; background:linear-gradient(180deg, #ffd700, #b8860b); color:#000; border-radius:20px;" onclick="executeSelectedSell()">💰 賣出選中物品</button></div>`;
-        
+
         listEl.innerHTML = htmlStr;
         _lastBagKey = currentBagKey;
-    } else {
-        // ✨ 特徵碼一樣，表示按鈕沒變，我們只去偷偷換掉那幾個標籤裡的「數字」！
+    } else {        // ✨ 特徵碼一樣，表示按鈕沒變，我們只去偷偷換掉那幾個標籤裡的「數字」！
         filtered.forEach(slot => {
             let countEl = el(`bag-count-${slot.id}`);
             if (countEl && countEl.innerText !== `x${slot.count}`) {
@@ -313,7 +332,7 @@ function renderBag() {
             // 動態更新可輸入的最大數量上限
             let inputEl = document.querySelector(`.bag-qty-input[data-id="${slot.id}"]`);
             if (inputEl) {
-               inputEl.max = slot.count;
+                inputEl.max = slot.count;
             }
         });
     }
@@ -495,13 +514,12 @@ function renderHelper() {
             }
         }
     }
-    
+
     if (_lastHelperState === rosterStr) return;
     _lastHelperState = rosterStr;
 
     let html = `
         <div class="inv-filter" style="margin-bottom:10px;">
-            <button class="f-btn ${currentHelperFilter === 'all' ? 'active' : ''}" id="hb-all" onclick="setHelperFilter('all')">全部</button>
             <button class="f-btn ${currentHelperFilter === 'phy' ? 'active' : ''}" id="hb-phy" onclick="setHelperFilter('phy')">武術</button>
             <button class="f-btn ${currentHelperFilter === 'mag' ? 'active' : ''}" id="hb-mag" onclick="setHelperFilter('mag')">法術</button>
             <button class="f-btn ${currentHelperFilter === 'agi' ? 'active' : ''}" id="hb-agi" onclick="setHelperFilter('agi')">奇術</button>
@@ -520,6 +538,7 @@ function renderHelper() {
                 let hdb = HELPER_DB[hid];
                 let timeStr = formatHelperTime(player.helperTimes[hid]);
                 let roleColor = hdb.role === 'phy' ? '#ff4757' : (hdb.role === 'mag' ? '#3498db' : '#2ecc71');
+                let isExpediting = player.expeditions && player.expeditions.find(e => e.helperId === hid);
 
                 html += `
                 <div class="item-row" style="border-left-color:${roleColor}; background:rgba(0,0,0,0.5); padding:12px;">
@@ -530,7 +549,10 @@ function renderHelper() {
                     </div>
                     <div style="display:flex; gap:5px;">
                         <button class="btn-action" style="background:#444; color:white; padding:6px 12px; font-size:0.9em;" onclick="showHelperDetails('${hid}')">詳細</button>
-                        <button class="btn-action" style="background:var(--quest); color:black; padding:6px 12px; font-size:0.9em;" onclick="toggleHelper('${hid}')">✨ 上陣</button>
+                        ${isExpediting
+                        ? `<button class="btn-action" style="background:#222; color:#666; padding:6px 12px; font-size:0.9em; cursor:not-allowed;" disabled>🏕️ 遠征中</button>`
+                        : `<button class="btn-action" style="background:var(--quest); color:black; padding:6px 12px; font-size:0.9em;" onclick="toggleHelper('${hid}')">✨ 上陣</button>`
+                    }
                     </div>
                 </div>`;
             });
@@ -603,7 +625,16 @@ function renderSmithy() {
             </div>
         </div>`;
 
-    let invHtml = `<div style="text-align:left; font-size:0.85em; color:#aaa; margin-bottom:15px; padding:0 5px;"><span style="color:var(--gold);">💰 金幣: ${player.gold.toLocaleString()}</span> | <span style="color:#aaa;">⚙️ ${getItem('m0').name}: ${player.mats.m0 || 0}</span></div>`;
+    let getMatCount = (id) => `<b style="color:white">${player.mats[id] || 0}</b>`;
+    let invHtml = `
+        <div style="background:rgba(0,0,0,0.5); padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #444; text-align:center; font-size:0.85em; color:#aaa; line-height:1.6;">
+            💰 金幣: <b style="color:var(--gold)">${player.gold.toLocaleString()}</b>
+            <div style="margin-top:5px; padding-top:5px; border-top:1px dashed #555;">
+                ⚙️ 鐵砂: ${getMatCount('m0')} | 🎋 竹皮: ${getMatCount('m1')} | 🪵 木片: ${getMatCount('m2')}<br>
+                ☂️ 破傘: ${getMatCount('m3')} | ⚡ 碎核: ${getMatCount('m4')} | 💀 骨粉: ${getMatCount('m5')}<br>
+                🌸 彼岸花: ${getMatCount('m6')}
+            </div>
+        </div>`;
 
     // 4. 定義各法器屬性與每級提升幅度
     let gears = [
@@ -638,6 +669,10 @@ function renderSmithy() {
             ${isMax ? '<span style="color:var(--gold); font-size:0.9em;">(已達極限)</span>' : `➔ <b style="color:lime;">+${nextStat}${g.unit}</b>`}
         </div>`;
 
+        let goldColor = player.gold >= req.goldCost ? '#888' : 'var(--danger)';
+        let ironColor = (player.mats.m0 || 0) >= req.ironCost ? '#888' : 'var(--danger)';
+        let specColor = (player.mats[req.matKey] || 0) >= req.specialCost ? '#888' : 'var(--danger)';
+
         return `
             <div class="item-row" style="flex-direction:column; align-items:flex-start; margin-bottom:10px; border-left: 4px solid var(--mat);">
                 <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
@@ -645,12 +680,14 @@ function renderSmithy() {
                     <span style="font-size:0.9em; font-weight:bold; color:${displayRate > 50 ? 'lime' : 'var(--danger)'};">成功率: ${displayRate}%</span>
                 </div>
                 ${statPreviewHtml}
-                <div style="font-size:0.8em; color:#888; margin-bottom: 4px;">需求: 💰${req.goldCost} | ⚙️${getItem('m0').name}x${req.ironCost} | 🔮${matName}x${req.specialCost}</div>
+                <div style="font-size:0.8em; margin-bottom: 4px; color:#888;">需求: <span style="color:${goldColor}">💰${req.goldCost}</span> | <span style="color:${ironColor}">⚙️${getItem('m0').name}x${req.ironCost}</span> | <span style="color:${specColor}">🔮${matName}x${req.specialCost}</span></div>
                 <button class="btn-action" style="width:100%; margin-top:5px; background:${canUpgrade ? 'var(--mat)' : '#444'}; color:${canUpgrade ? '#000' : '#888'}" ${!canUpgrade ? 'disabled' : ''} onclick="upgradeGear('${g.id}')">靈脈強化</button>
             </div>`;
     }).join("");
 
     // 6. 輸出完整畫面
+    let aux = (id) => { let c = player.mats[id] || 0; return `<span style="color:${c > 0 ? '#aaa' : 'var(--danger)'}">${c}</span>`; };
+
     c.innerHTML = `
         <h3>⚒️ 虎徹的鍛冶屋</h3>
         ${statusPanel}
@@ -664,12 +701,12 @@ function renderSmithy() {
         <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.85em;">
             <p style="text-align:center; color:var(--cherry); margin:0 0 5px 0;">🔧 強化輔助設置</p>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                <label><input type="checkbox" id="use-hammer" ${currentHammer ? 'checked' : ''} onchange="renderSmithy()"> 匠人之錘 (${player.mats.mat_hammer_low || 0})</label>
-                <label><input type="checkbox" id="use-shield" ${currentShield ? 'checked' : ''} onchange="renderSmithy()"> 替身符札 (${player.mats.mat_shield_break || 0})</label>
-                <label><input type="checkbox" id="use-shield-down" ${currentShieldDown ? 'checked' : ''} onchange="renderSmithy()"> 緩衝符札 (${player.mats.mat_shield_down || 0})</label> <label><input type="checkbox" id="use-gambler" ${currentGambler ? 'checked' : ''} onchange="renderSmithy()"> 修羅之印 (${player.mats.mat_gambler || 0})</label>
+                <label><input type="checkbox" id="use-hammer" ${currentHammer ? 'checked' : ''} onchange="renderSmithy()"> 匠人之錘 (${aux('mat_hammer_low')})</label>
+                <label><input type="checkbox" id="use-shield" ${currentShield ? 'checked' : ''} onchange="renderSmithy()"> 替身符札 (${aux('mat_shield_break')})</label>
+                <label><input type="checkbox" id="use-shield-down" ${currentShieldDown ? 'checked' : ''} onchange="renderSmithy()"> 緩衝符札 (${aux('mat_shield_down')})</label> <label><input type="checkbox" id="use-gambler" ${currentGambler ? 'checked' : ''} onchange="renderSmithy()"> 修羅之印 (${aux('mat_gambler')})</label>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
-                <label><input type="checkbox" id="use-perfect" ${currentPerfect ? 'checked' : ''} onchange="renderSmithy()"> 絕對真理 (${player.mats.mat_perfect || 0})</label>
+                <label><input type="checkbox" id="use-perfect" ${currentPerfect ? 'checked' : ''} onchange="renderSmithy()"> 絕對真理 (${aux('mat_perfect')})</label>
             </div>
             <p style="font-size:0.85em; color:#666; margin:8px 0 0 0; text-align:center;">* 註：防具 Lv.6 以上失敗會歸零。<br>若勾選「修羅之印」，失敗必降級，防護將失效。</p>
         </div>
@@ -743,6 +780,9 @@ function renderIzakayaMenu() {
             <div class="slot-card" style="width:auto; margin:0; border-color:#9b59b6;" onclick="showSubView('casino')">
                 <h3 style="color:#9b59b6; margin:5px 0;">🎲 暗室賭局</h3><p style="margin:0; font-size:0.8em; color:#aaa;">德州式 21 點</p>
             </div>
+            <div class="slot-card" style="width:auto; margin:0; border-color:#e67e22;" onclick="showSubView('cook')">
+                <h3 style="color:#e67e22; margin:5px 0;">🍲 製作料理</h3><p style="margin:0; font-size:0.8em; color:#aaa;">代工烹飪料理</p>
+            </div>
         </div>`;
 }
 
@@ -799,6 +839,58 @@ function renderIzakayaWork() {
         </div>`;
     }
     el('sub-content').innerHTML = html;
+}
+
+function renderCook() {
+    const c = el('sub-content'); if (!c) return;
+
+    let invHtml = `<div style="background:rgba(0,0,0,0.5); padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #444; font-size:0.85em; color:#aaa;">
+        <div style="text-align:center; margin-bottom:8px; border-bottom:1px dashed #555; padding-bottom:5px;">💰 金幣: <b style="color:var(--gold)">${player.gold.toLocaleString()}</b></div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">
+            <span>🍖 野味: <b style="color:white">${player.potions['p1'] || 0}</b></span>
+            <span>🍄 野菇: <b style="color:white">${player.mats['mat_mushroom'] || 0}</b></span>
+            <span>💧 泉水: <b style="color:white">${player.mats['mat_water'] || 0}</b></span>
+            <span>🥬 高麗菜: <b style="color:white">${player.mats['mat_cabbage'] || 0}</b></span>
+            <span>🌾 小麥: <b style="color:white">${player.mats['mat_wheat'] || 0}</b></span>
+            <span>🍚 稻米: <b style="color:white">${player.mats['mat_rice'] || 0}</b></span>
+            <span>🥕 蘿蔔: <b style="color:white">${player.mats['mat_radish'] || 0}</b></span>
+            <span>🐟 鰷魚: <b style="color:white">${player.mats['mat_fish_1'] || 0}</b></span>
+            <span>🐟 香魚: <b style="color:white">${player.mats['mat_fish_2'] || 0}</b></span>
+            <span>🐟 錦鯉: <b style="color:white">${player.mats['mat_fish_3'] || 0}</b></span>
+        </div>
+    </div>`;
+
+    let recipesHtml = COOKING_RECIPES.map((r, idx) => {
+        let resItem = getItem(r.result);
+        let canCook = player.gold >= r.cost;
+        let reqStrs = [];
+
+        for (let k in r.req) {
+            let dbItem = getItem(k);
+            let own = dbItem.cat === 'rec' ? (player.potions[k] || 0) : (player.mats[k] || 0);
+            let need = r.req[k];
+            if (own < need) canCook = false;
+            reqStrs.push(`<span style="color:${own >= need ? '#aaa' : 'var(--danger)'}">${dbItem.name} x${need}</span>`);
+        }
+
+        return `
+            <div class="item-row" style="border-left-color:#e67e22; padding:12px; align-items:flex-start; margin-bottom:10px;">
+                <div style="flex:1;">
+                    <b style="color:#e67e22; font-size:1.1em;">${resItem.name}</b> <span style="font-size:0.8em; color:var(--gold);">($${r.cost} 金幣)</span><br>
+                    <small style="color:#ddd; display:block; margin:4px 0;">${resItem.desc}</small>
+                    <div style="font-size:0.85em; margin-top:5px;">消耗：${reqStrs.join(" / ")}</div>
+                </div>
+                <button class="btn-action" style="background:${canCook ? '#e67e22' : '#444'}; color:${canCook ? 'black' : '#888'}; margin-top:8px; width:80px;" ${!canCook ? 'disabled' : ''} onclick="cookRecipe(${idx})">
+                    烹飪
+                </button>
+            </div>`;
+    }).join("");
+
+    c.innerHTML = `<h3>🍲 製作料理</h3>
+        <p style="color:#aaa; font-size:0.9em; margin-bottom:15px;">老闆娘 宵月：「把妳在野外收集到的食材交給我，付點代工費，我幫妳做成能強化戰鬥力的美味料理！」</p>
+        ${invHtml}
+        ${recipesHtml}
+        <button class="btn-action" style="width:100%; margin-top:15px; background:#444; color:white;" onclick="showSubView('izakaya')">← 返回居酒屋</button>`;
 }
 
 function renderCasino() {
@@ -871,15 +963,117 @@ function renderTeahouse() {
         <p style="color:#aaa; font-style:italic; margin-bottom:20px;">老闆娘 瑩：「遠道而來的旅人，辛苦了。外面風沙大、霧氣也重...快進來歇歇腳，喝杯熱茶暖暖身子吧。」</p>
         
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
-            <div class="slot-card" style="width:auto; margin:0; border-color:var(--quest);" onclick="showToast('任務系統準備中...即將開放！', 'var(--quest)')">
-                <h3 style="color:var(--quest); margin:5px 0;">📜 揭示板</h3><p style="margin:0; font-size:0.8em; color:#aaa;">承接委託與報酬</p>
+            <div class="slot-card" style="width:auto; margin:0; border-color:var(--quest);" onclick="showToast('目前沒有新的委託傳聞喔。', 'var(--quest)')">
+                <h3 style="color:var(--quest); margin:5px 0;">📜 傳聞揭示板</h3><p style="margin:0; font-size:0.8em; color:#aaa;">村莊委託與情報</p>
             </div>
             <div class="slot-card" style="width:auto; margin:0; border-color:var(--accent);" onclick="showToast('玩家互動目前尚未開放', 'var(--danger)')">
                 <h3 style="color:var(--accent); margin:5px 0;">👥 玩家互動</h3><p style="margin:0; font-size:0.8em; color:#aaa;">交流情報與傳聞</p>
             </div>
+            <div class="slot-card" style="width:auto; margin:0; border-color:#2ecc71;" onclick="showSubView('expedition')">
+                <h3 style="color:#2ecc71; margin:5px 0;">🏕️ 夥伴遠征</h3><p style="margin:0; font-size:0.8em; color:#aaa;">派遣夥伴獲得物資</p>
+            </div>
         </div>
         
         <button class="btn-action" style="width:100%; background:#444; color:white;" onclick="backToVillage()">← 離開茶屋</button>`;
+}
+
+let expRefreshTimer = null;
+function renderExpedition() {
+    const c = el('sub-content'); if (!c) return;
+    if (expRefreshTimer) clearInterval(expRefreshTimer);
+
+    // ✨ 獨立出進度條的渲染邏輯
+    let getActiveHtml = () => {
+        let now = Date.now();
+        let activeHtml = "";
+        if (player.expeditions && player.expeditions.length > 0) {
+            activeHtml = `<h4 style="color:var(--quest); margin-bottom:10px; border-bottom:1px dashed #444; padding-bottom:5px;">🏕️ 進行中的遠征</h4>`;
+            player.expeditions.forEach((exp, idx) => {
+                let hName = HELPER_DB[exp.helperId].name;
+                let mName = maps[exp.mapIdx].name;
+                let elapsed = Math.floor((now - exp.startTime) / 1000);
+                let isDone = elapsed >= exp.duration;
+                let pct = Math.min(100, (elapsed / exp.duration) * 100);
+
+                let timeText = isDone ? "✨ 探索完成！" : `剩餘：${formatHelperTime(exp.duration - elapsed)}`;
+
+                activeHtml += `
+                    <div style="background:#111; border:1px solid ${isDone ? 'var(--quest)' : '#444'}; border-radius:8px; padding:12px; margin-bottom:12px; position:relative;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                            <span style="font-size:0.95em;"><b style="color:#fdcb6e">${hName}</b> ➔ ${mName}</span>
+                            <span style="color:${isDone ? 'var(--quest)' : '#aaa'}; font-size:0.85em; font-weight:bold;">${timeText}</span>
+                        </div>
+                        <div class="bar-bg" style="height:6px; margin-bottom:10px;"><div class="exp-fill" style="width:${pct}%; background:${isDone ? 'var(--quest)' : '#2ecc71'};"></div></div>
+                        <div style="display:flex; gap:10px;">
+                            ${isDone
+                        ? `<button class="btn-action" style="flex:1; background:var(--quest); color:black;" onclick="claimExpedition(${idx})">🎁 領取物資</button>`
+                        : `<button class="btn-action" style="flex:1; background:#222; color:#666; font-size:0.85em; cursor:not-allowed;" disabled>🏃 探索中...</button>`
+                    }
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        return activeHtml;
+    };
+
+    // 1. 渲染派遣表單 (此區塊只在切換頁面時渲染一次，不再被計時器干擾)
+    let formHtml = `<h4 style="color:#2ecc71; margin-top:20px; border-top:1px dashed #444; padding-top:15px;">發起新遠征</h4>`;
+
+    let helperOpts = `<option value="">-- 選擇夥伴 --</option>`;
+    ALLOWED_EXPEDITION_HELPERS.forEach(hid => {
+        let hdb = HELPER_DB[hid];
+        let time = player.helperTimes ? (player.helperTimes[hid] || 0) : 0;
+        let isBusy = (player.activeHelper === hid) || (player.expeditions && player.expeditions.find(e => e.helperId === hid));
+
+        if (time > 0) {
+            if (isBusy) { helperOpts += `<option value="${hid}" disabled>${hdb.name} (出勤中)</option>`; }
+            else { helperOpts += `<option value="${hid}">${hdb.name} (可用: ${Math.floor(time / 3600)}h ${Math.floor((time % 3600) / 60)}m)</option>`; }
+        } else {
+            helperOpts += `<option value="${hid}" disabled>${hdb.name} (無合約時數)</option>`;
+        }
+    });
+
+    let mapOpts = "";
+    for (let i = 1; i <= player.maxMapIdx; i++) { mapOpts += `<option value="${i}">${maps[i].name}</option>`; }
+
+    formHtml += `
+        <div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:8px;">
+            <div style="margin-bottom:10px;">
+                <label style="color:#aaa; font-size:0.9em; display:block; margin-bottom:3px;">選擇派遣夥伴 (先行開放測試名單)</label>
+                <select id="exp-helper-sel" style="width:100%; padding:8px; background:#000; color:white; border:1px solid #444;">${helperOpts}</select>
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="color:#aaa; font-size:0.9em; display:block; margin-bottom:3px;">選擇探索目的地</label>
+                <select id="exp-map-sel" style="width:100%; padding:8px; background:#000; color:white; border:1px solid #444;">${mapOpts}</select>
+            </div>
+            <div style="margin-bottom:15px;">
+                <label style="color:#aaa; font-size:0.9em; display:block; margin-bottom:3px;">遠征時長</label>
+                <select id="exp-time-sel" style="width:100%; padding:8px; background:#000; color:white; border:1px solid #444;">
+                    <option value="2">2 小時</option>
+                    <option value="4">4 小時</option>
+                    <option value="8">8 小時</option>
+                </select>
+            </div>
+            <button class="btn-action" style="width:100%; background:#2ecc71; color:black; font-weight:bold;" onclick="startExpedition()">🏕️ 扣除時數並派出</button>
+        </div>
+    `;
+
+    c.innerHTML = `<h3>🏕️ 夥伴遠征營地</h3>
+        <p style="color:#aaa; font-size:0.85em;">老闆娘 螢：「把閒置的夥伴派去妳已經探索過的地點吧。他們會消耗真正的合約時間，並帶回滿滿的素材與金幣喔。」</p>
+        <div id="exp-dynamic-area">${getActiveHtml()}</div>
+        ${formHtml}
+        <button class="btn-action" style="width:100%; margin-top:20px; background:#444; color:white;" onclick="clearInterval(expRefreshTimer); showSubView('teahouse')">← 返回茶屋</button>`;
+
+    // ✨ 2. 設定計時器：每秒只偷偷更新 id 為 exp-dynamic-area 的部分
+    expRefreshTimer = setInterval(() => {
+        let dArea = document.getElementById('exp-dynamic-area');
+        if (dArea && player.expeditions && player.expeditions.length > 0) {
+            dArea.innerHTML = getActiveHtml();
+        } else if (!dArea) {
+            clearInterval(expRefreshTimer); // 切換頁面時安全清除定時器
+        }
+    }, 1000);
 }
 
 function renderSect() {
@@ -1514,4 +1708,280 @@ function showFloatingLog(msg, color = "white") {
 
     // 保持畫面整潔，超過 5 筆就刪掉最舊的
     if (fc.children.length > 5) fc.firstChild.remove();
+}
+
+// ============================================================================
+// ✨ 生活職人與領地系統 (Life Skills UI)
+// ============================================================================
+
+// ✨ 工具耐久度文字產生器
+function getToolDuraText(toolId) {
+    let count = player.mats[toolId] || 0;
+    if (count <= 0) return `<span style="color:#888;">未裝備 (需至萬屋購買)</span>`;
+    let item = typeof getItem === 'function' ? getItem(toolId) : null;
+    if (!item) return "";
+    let max = item.maxDura || 1;
+    let cur = player.toolDura && player.toolDura[toolId] !== undefined ? player.toolDura[toolId] : max;
+    let pct = cur / max;
+    let color = pct > 0.5 ? 'lime' : (pct > 0.2 ? 'var(--gold)' : 'var(--danger)');
+    return `備用: ${count-1} 把 | 當前耐久: <span style="color:${color}; font-weight:bold;">${cur}/${max}</span>`;
+}
+
+function renderLifeSkills() {
+    const c = el('sub-content'); if (!c) return;
+    
+    if (typeof checkStaminaRegen === 'function') checkStaminaRegen();
+
+    let fLvl = player.lifeSkills?.farm?.lvl || 1;
+    let fiLvl = player.lifeSkills?.fish?.lvl || 1;
+    let wLvl = player.lifeSkills?.wood?.lvl || 1;
+
+    c.innerHTML = `
+        <h3>🏡 結界領地</h3>
+        <div style="background:#111; padding:15px; border-radius:8px; border:1px solid var(--gold); margin-bottom:15px; text-align:center;">
+            <h3 style="margin:0 0 10px 0; color:var(--gold);">🔋 體力狀態：${Math.floor(player.stamina)} / ${player.maxStamina}</h3>
+            <div style="display:flex; justify-content:space-around; color:var(--quest); font-size:0.95em;">
+                <span>🌾 農田 Lv.${fLvl}</span>
+                <span>🎣 漁場 Lv.${fiLvl}</span>
+                <span>🪓 林場 Lv.${wLvl}</span>
+            </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr; gap:12px;">
+            <div class="slot-card" style="width:auto; margin:0; border-color:var(--quest);" onclick="showSubView('farm')">
+                <h3 style="color:var(--quest); margin:5px 0;">🌾 結界農田</h3>
+                <p style="margin:0; font-size:0.8em; color:#aaa;">下種、澆水與收成</p>
+            </div>
+            <div class="slot-card" style="width:auto; margin:0; border-color:var(--accent);" onclick="showSubView('fish')">
+                <h3 style="color:var(--accent); margin:5px 0;">🎣 悠閒漁場</h3>
+                <p style="margin:0; font-size:0.8em; color:#aaa;">掛機釣魚</p>
+            </div>
+            <div class="slot-card" style="width:auto; margin:0; border-color:var(--mat);" onclick="showSubView('wood')">
+                <h3 style="color:var(--mat); margin:5px 0;">🪓 迷霧林場</h3>
+                <p style="margin:0; font-size:0.8em; color:#aaa;">消耗體力採集木材</p>
+            </div>
+        </div>
+        <button class="btn-action" style="width:100%; margin-top:15px; background:#444; color:white;" onclick="backToVillage()">← 返回村莊</button>
+    `;
+}
+
+function renderFarm() {
+    const c = el('sub-content'); if (!c) return;
+    if (typeof checkStaminaRegen === 'function') checkStaminaRegen();
+
+    let fLvl = player.lifeSkills?.farm?.lvl || 1;
+    let unlockLvls = [1, 3, 5, 10]; // ✨ 設定四塊地的解鎖等級
+    let hasHoe = (player.mats['tool_hoe_1'] || 0) > 0;
+    let now = Date.now();
+
+    // 全局澆水按鈕邏輯
+    let waterCd = 30 * 60 * 1000;
+    let waterElapsed = player.lastWaterTime ? (now - player.lastWaterTime) : waterCd;
+    let waterCdLeft = Math.max(0, waterCd - waterElapsed);
+    let waterBtnText = waterCdLeft > 0 ? `💦 冷卻中 (${Math.ceil(waterCdLeft/60000)}分)` : "💦 全區澆水 (-1% 時間)";
+    let waterBtnColor = waterCdLeft > 0 ? "#444" : "var(--quest)";
+    let waterBtnFont = waterCdLeft > 0 ? "#888" : "black";
+
+    // ✨ 迴圈產生 4 塊農田
+    let plotsHtml = "";
+    for (let i = 0; i < 4; i++) {
+        if (fLvl < unlockLvls[i]) {
+            plotsHtml += `
+                <div style="background:#111; border:1px dashed #444; border-radius:8px; padding:15px; text-align:center; color:#555;">
+                    <span style="font-size:2em; display:block; margin-bottom:5px;">🔒</span>
+                    <span style="font-size:0.85em;">農田 Lv.${unlockLvls[i]} 解鎖</span>
+                </div>`;
+        } else {
+            let crop = player.farmCrops && player.farmCrops[i];
+            if (!crop) {
+                plotsHtml += `
+                    <div style="background:rgba(255,255,255,0.05); border:1px solid #555; border-radius:8px; padding:12px; text-align:center;">
+                        <p style="color:#aaa; font-size:0.85em; margin:0 0 10px 0;">空置田地 ${i+1}</p>
+                        ${hasHoe ? `<button class="btn-action" style="width:100%; background:var(--quest); color:black; font-size:0.9em;" onclick="promptPlantSeed(${i})">🌱 播種</button>` : `<button class="btn-action" style="width:100%; background:#444; color:#888; font-size:0.85em;" onclick="showToast('請先購買【粗製鋤頭】', 'var(--danger)')">缺少農具</button>`}
+                    </div>`;
+            } else {
+                let seedItem = typeof getItem === 'function' ? getItem(crop.seedId) : { name: "未知作物" };
+                let timeLeft = crop.endTime - now;
+                
+                if (timeLeft <= 0) {
+                    plotsHtml += `
+                        <div style="background:rgba(85,239,196,0.1); border:1px solid var(--quest); border-radius:8px; padding:12px; text-align:center;">
+                            <p style="color:var(--quest); font-size:0.95em; margin:0 0 5px 0; font-weight:bold;">${seedItem.name}</p>
+                            <span style="color:lime; font-size:0.8em; display:block; margin-bottom:10px;">✨ 已經成熟</span>
+                            <button class="btn-action" style="width:100%; background:var(--gold); color:black; font-size:0.9em;" onclick="harvestCrop(${i})">🌾 收成</button>
+                        </div>`;
+                } else {
+                    let mins = Math.floor(timeLeft / 60000);
+                    let secs = Math.floor((timeLeft % 60000) / 1000);
+                    plotsHtml += `
+                        <div style="background:rgba(255,255,255,0.05); border:1px solid #555; border-radius:8px; padding:12px; text-align:center;">
+                            <p style="color:white; font-size:0.9em; margin:0 0 5px 0;">${seedItem.name}</p>
+                            <span style="color:var(--cherry); font-size:0.8em; display:block; margin-bottom:10px;">⏳ ${mins}分 ${secs}秒</span>
+                            <button class="btn-action" style="width:100%; background:#444; color:#888; font-size:0.9em;" disabled>生長中</button>
+                        </div>`;
+                }
+            }
+        }
+    }
+
+    c.innerHTML = `
+        <h3>🌾 結界農田 <span style="font-size:0.6em; color:var(--gold);">Lv.${fLvl}</span></h3>
+        <div style="font-size:0.85em; color:#aaa; margin-bottom:10px; background:rgba(0,0,0,0.4); padding:8px; border-radius:5px; border:1px dashed #555;">⛏️ 農具狀態：${getToolDuraText('tool_hoe_1')}</div>
+        <button class="btn-action" style="width:100%; margin-bottom:15px; background:${waterBtnColor}; color:${waterBtnFont};" ${waterCdLeft > 0 ? 'disabled' : ''} onclick="waterCrop()">${waterBtnText}</button>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:15px;">
+            ${plotsHtml}
+        </div>
+        <button class="btn-action" style="width:100%; margin-top:10px; background:#444; color:white;" onclick="showSubView('lifeSkills')">← 返回生活領地</button>
+    `;
+}
+
+function renderFish() {
+    const c = el('sub-content'); if (!c) return;
+    let hasRod = (player.mats['tool_rod_1'] || 0) > 0;
+    let fLvl = player.lifeSkills?.fish?.lvl || 1;
+    
+    let contentHtml = "";
+    if (!player.fishingState || !player.fishingState.active) {
+        let rodBtn = hasRod ? `<button class="btn-action" style="width:100%; background:var(--accent); color:black; font-size:1.05em; padding:12px;" onclick="startFishing()">🎣 拋竿靜候 (開始掛機)</button>` : `<button class="btn-action" style="width:100%; background:#444; color:#888; font-size:1.05em; padding:12px;" onclick="showToast('請先至萬屋購買【簡易釣竿】', 'var(--danger)')">🎣 缺少釣具</button>`;
+        contentHtml = `
+            <p style="color:#aaa; font-size:0.9em; margin-bottom:15px;">尋找一處平靜的水域，放下釣竿，靜靜等待魚兒上鉤。(最高自動累積 8 小時)</p>
+            <div style="text-align:center; padding:25px 10px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px dashed #555; margin-bottom:15px;">
+                <span style="font-size:2.5em; display:block; margin-bottom:10px;">🌊</span><span style="color:#888;">水面平靜無波...</span>
+            </div>${rodBtn}`;
+    } else {
+        let timeStr = formatHelperTime(Math.floor((Date.now() - player.fishingState.startTime)/1000));
+        let caught = player.fishingState.caught || { m1: 0, m2: 0, m3: 0 };
+        let catchLogHtml = ``;
+        if (caught.m1 || caught.m2 || caught.m3) {
+            catchLogHtml = `<div style="background:rgba(0,0,0,0.4); padding:10px; border-radius:5px; margin-top:10px; text-align:left; font-size:0.9em;">
+                <b style="color:var(--quest); display:block; margin-bottom:5px;">🐟 目前漁獲：</b>
+                ${caught.m1 ? `鰷魚 x${caught.m1} ` : ''}
+                ${caught.m2 ? `香魚 x${caught.m2} ` : ''}
+                ${caught.m3 ? `錦鯉 x${caught.m3} ` : ''}
+            </div>`;
+        }
+
+        contentHtml = `
+            <div style="text-align:center; padding:25px 10px; background:rgba(112, 161, 255, 0.1); border-radius:8px; border:1px solid var(--accent); margin-bottom:15px;">
+                <span style="font-size:2.5em; display:block; margin-bottom:10px;">🐟</span>
+                <span style="color:var(--accent); font-weight:bold; font-size:1.1em;">正在專注垂釣中...</span><br>
+                <span style="color:white; font-size:1.1em; display:block; margin-top:10px;">已掛機：${timeStr}</span>
+                ${catchLogHtml}
+            </div>
+            <button class="btn-action" style="width:100%; background:var(--gold); color:black; font-size:1.05em; padding:12px;" onclick="stopFishing()">🛑 收竿結算漁獲</button>`;
+    }
+
+    c.innerHTML = `
+        <h3>🎣 悠閒漁場 <span style="font-size:0.6em; color:var(--gold);">Lv.${fLvl}</span></h3>
+        <div style="font-size:0.85em; color:#aaa; margin-bottom:10px; background:rgba(0,0,0,0.4); padding:8px; border-radius:5px; border:1px dashed #555;">🎣 釣具狀態：${getToolDuraText('tool_rod_1')}</div>
+        ${contentHtml}
+        <button class="btn-action" style="width:100%; margin-top:10px; background:#444; color:white;" onclick="checkLeaveFish()">← 返回生活領地</button>
+    `;
+}
+
+function checkLeaveFish() {
+    if (player.fishingState && player.fishingState.active) {
+        showToast("🎣 正在釣魚中，請先【收竿結算】才能離開！", "var(--danger)");
+    } else {
+        showSubView('lifeSkills');
+    }
+}
+
+function renderWood() {
+    const c = el('sub-content'); if (!c) return;
+    if (typeof checkStaminaRegen === 'function') checkStaminaRegen();
+    
+    let hasAxe = (player.mats['tool_axe_1'] || 0) > 0;
+    let wLvl = player.lifeSkills?.wood?.lvl || 1;
+    
+    let contentHtml = "";
+    if (!player.woodState || !player.woodState.active) {
+        let axeBtn = hasAxe 
+            ? `<button class="btn-action" style="width:100%; background:var(--mat); color:black; font-size:1.1em; padding:12px; margin-top:5px;" onclick="startWoodchopping()">🪓 進入林場 (開始掛機)</button>` 
+            : `<button class="btn-action" style="width:100%; background:#444; color:#888; font-size:1.1em; padding:12px; margin-top:5px;" onclick="showToast('請先至萬屋購買【生鏽鐵斧】', 'var(--danger)')">🪓 缺少斧具</button>`;
+            
+        let unlockText = "朽木 (Lv.1)";
+        if (wLvl >= 3) unlockText += "、堅韌原木 (Lv.3)";
+        if (wLvl >= 5) unlockText += "、靈氣神木 (Lv.5)";
+
+        contentHtml = `
+            <p style="color:#aaa; font-size:0.9em; margin-bottom:15px;">在迷霧中尋找神木，每分鐘消耗 5 點體力與 1 點斧頭耐久。(最高自動累積 8 小時)</p>
+            <div style="background:#111; padding:15px; border-radius:8px; border:1px solid var(--gold); margin-bottom:15px; text-align:center;">
+                <h3 style="margin:0; color:var(--gold);">🔋 體力：${Math.floor(player.stamina)} / ${player.maxStamina}</h3>
+            </div>
+            <div class="slot-card" style="border-color:var(--mat); margin-bottom:15px; width:auto; margin-left:0; margin-right:0;">
+                <p style="color:#aaa; font-size:0.85em; margin:5px 0;">可砍伐：<span style="color:white;">${unlockText}</span></p>
+                ${axeBtn}
+            </div>`;
+    } else {
+        let timeStr = formatHelperTime(Math.floor((Date.now() - player.woodState.startTime)/1000));
+        let caught = player.woodState.caught || { m1: 0, m2: 0, m3: 0, stam: 0 };
+        let catchLogHtml = "";
+        if (caught.m1 || caught.m2 || caught.m3) {
+            catchLogHtml = `<div style="background:rgba(0,0,0,0.4); padding:10px; border-radius:5px; margin-top:10px; text-align:left; font-size:0.9em;"><b style="color:var(--mat); display:block; margin-bottom:5px;">🪵 目前收穫：</b>${caught.m1 ? `朽木 x${caught.m1} ` : ''}${caught.m2 ? `堅韌原木 x${caught.m2} ` : ''}${caught.m3 ? `靈氣神木 x${caught.m3} ` : ''}<br><span style="color:#aaa; font-size:0.85em; display:block; margin-top:5px;">消耗體力: -${caught.stam}</span></div>`;
+        }
+        contentHtml = `
+            <div style="text-align:center; padding:25px 10px; background:rgba(225, 177, 44, 0.1); border-radius:8px; border:1px solid var(--mat); margin-bottom:15px;">
+                <span style="font-size:2.5em; display:block; margin-bottom:10px;">🌲</span>
+                <span style="color:var(--mat); font-weight:bold; font-size:1.1em;">正在專注伐木中...</span><br>
+                <span style="color:white; font-size:1.1em; display:block; margin-top:10px;">已掛機：${timeStr}</span>
+                <span style="color:var(--gold); font-size:0.9em; display:block; margin-top:5px;">🔋 剩餘體力：${Math.floor(player.stamina)} / ${player.maxStamina}</span>
+                ${catchLogHtml}
+            </div>
+            <button class="btn-action" style="width:100%; background:var(--gold); color:black; font-size:1.05em; padding:12px;" onclick="stopWoodchopping()">🛑 收工結算木材</button>`;
+    }
+
+    c.innerHTML = `
+        <h3>🪓 迷霧林場 <span style="font-size:0.6em; color:var(--gold);">Lv.${wLvl}</span></h3>
+        <div style="font-size:0.85em; color:#aaa; margin-bottom:10px; background:rgba(0,0,0,0.4); padding:8px; border-radius:5px; border:1px dashed #555;">🪓 斧具狀態：${getToolDuraText('tool_axe_1')}</div>
+        ${contentHtml}
+        <button class="btn-action" style="width:100%; margin-top:10px; background:#444; color:white;" onclick="checkLeaveWood()">← 返回生活領地</button>
+    `;
+}
+
+function checkLeaveWood() {
+    if (player.woodState && player.woodState.active) {
+        showToast("🪓 正在伐木中，請先【收工結算】才能離開！", "var(--danger)");
+    } else {
+        showSubView('lifeSkills');
+    }
+}
+
+function waterCrop() {
+    let now = Date.now();
+    if (player.lastWaterTime && now - player.lastWaterTime < 30 * 60 * 1000) return;
+    player.lastWaterTime = now;
+    
+    let watered = false;
+    if (player.farmCrops) {
+        player.farmCrops.forEach(crop => {
+            if (crop && crop.endTime) {
+                let totalDuration = crop.endTime - crop.startTime;
+                crop.endTime -= (totalDuration * 0.01);
+                watered = true;
+            }
+        });
+    }
+    
+    if (watered) {
+        if (typeof showToast === 'function') showToast("💦 全區澆水完成！生長時間微幅減少", "var(--quest)");
+    } else {
+        if (typeof showToast === 'function') showToast("💦 澆水完成！(不過地裡目前沒有作物)", "var(--quest)");
+    }
+    saveGame(false);
+    renderFarm();
+}
+
+function promptPlantSeed(slotIdx) {
+    let seedOpts = ""; let hasSeeds = false;
+    for(let k in player.mats) {
+        if(player.mats[k] > 0 && typeof getItem === 'function') {
+            let item = getItem(k);
+            if(item.cat === 'seed') {
+                hasSeeds = true;
+                seedOpts += `<div style="display:flex; justify-content:space-between; align-items:center; background:#111; padding:10px; margin-bottom:5px; border:1px solid #333; border-radius:5px;"><div><b style="color:var(--quest)">${item.name}</b> (持有: ${player.mats[k]})<br><span style="font-size:0.8em; color:#aaa;">生長時間: ${item.growTime} 分鐘</span></div><button class="btn-action" style="background:var(--quest); color:black;" onclick="plantSeed('${k}', ${slotIdx}); el('game-modal').style.display='none';">播下種子</button></div>`;
+            }
+        }
+    }
+    if(!hasSeeds) seedOpts = "<div style='color:#888; text-align:center; padding:20px;'>行囊中沒有任何種子。<br>請前往萬屋或透過探索取得。</div>";
+    openModal("🌱 選擇種子", `<div style="max-height:250px; overflow-y:auto; text-align:left;">${seedOpts}</div>`, "關閉");
 }

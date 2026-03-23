@@ -26,7 +26,10 @@ const defaultPlayer = {
     sectRank: 0,    // ✨ 新增：流派階級 (對應 0, 1, 2)
     hasSeenIntro: false,
     hasSeenVillageIntro: false,
+    hasSeenTeahouse: false,
     hasSeenShrineIntro: false,
+    completedStories: [], // ✨ 升級：通用劇情進度清單 (取代原本繁瑣的 storyFlags)
+    hasMetBlacksmith: false, // ✨ 新增：是否已見過鍛造屋師傅
     name: "", lvl: 1, exp: 0, next: 30, gold: 0,
     str: 2, vit: 1, agi: 0, statPoints: 5,
     lockedStats: { str: 2, vit: 1, agi: 0 },
@@ -41,9 +44,18 @@ const defaultPlayer = {
     unlockedSkills: [], equippedSkills: [null, null, null, null, null, null],
     skillGambits: [0, 0, 0, 0, 0, 0], skillGambitValues: [50, 50, 50, 50, 50, 50], skillGambitOps: ['<', '<', '<', '<', '<', '<'],
     helperTimes: {},
+    expeditions: [], // ✨ 新增：記錄進行中的遠征
     activeHelper: null,
     shrineDonation: 0, ascensionCount: 0,
-    maxOfflineMinutes: 60 // ✨ 新增：預設離線掛機上限為 60 分鐘
+    maxOfflineMinutes: 60, // ✨ 新增：預設離線掛機上限為 60 分鐘
+    stamina: 100, maxStamina: 100, // ✨ 生活系統：體力機制
+    staminaLastRefill: Date.now(),
+    lifeSkills: { farm: { lvl: 1, exp: 0, next: 100 }, fish: { lvl: 1, exp: 0, next: 100 }, wood: { lvl: 1, exp: 0, next: 100 } },
+    farmCrops: [null, null, null, null], // ✨ 擴建為 4 格農田
+    fishingState: { active: false, startTime: 0, lastTick: 0, caught: { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 } }, // ✨ 漁場掛機狀態
+    woodState: { active: false, startTime: 0, lastTick: 0, caught: { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 } }, // ✨ 伐木掛機狀態
+    toolDura: {}, // ✨ 工具耐久度記錄
+    blueprints: [] // ✨ 製作系統：已學習的製作圖 ID 清單
 };
 
 let player = JSON.parse(JSON.stringify(defaultPlayer));
@@ -111,12 +123,38 @@ function loadGame() {
             player.mats = Object.assign({}, defaultPlayer.mats, sd.mats || {});
             player.gear = Object.assign({}, defaultPlayer.gear, sd.gear || {});
             player.allocatedStats = Object.assign({ str: 0, vit: 0, agi: 0 }, sd.allocatedStats || {});
+            player.expeditions = sd.expeditions || []; // ✨ 安全載入遠征紀錄
             player.buffs = Object.assign({}, sd.buffs || {});
 
             // 3. 補齊新功能欄位
             if (player.sect === undefined) player.sect = null;
             if (player.sectContrib === undefined) player.sectContrib = 0;
             if (player.sectRank === undefined) player.sectRank = 0;
+            if (!player.completedStories) player.completedStories = []; // ✨ 補齊通用劇情清單
+            if (player.hasMetBlacksmith === undefined) player.hasMetBlacksmith = false;
+
+            // ✨ 補齊舊存檔生活職人屬性
+            if (player.stamina === undefined) player.stamina = defaultPlayer.stamina;
+            if (player.maxStamina === undefined) player.maxStamina = defaultPlayer.maxStamina;
+            if (!player.staminaLastRefill) player.staminaLastRefill = Date.now();
+            if (!player.lifeSkills) player.lifeSkills = JSON.parse(JSON.stringify(defaultPlayer.lifeSkills));
+            if (!player.blueprints) player.blueprints = [];
+
+            // ✨ 補齊 4 格農田與釣魚狀態 (無縫轉移舊存檔的農作物)
+            if (!player.farmCrops) {
+                player.farmCrops = [null, null, null, null];
+                if (player.farmCrop) {
+                    player.farmCrops[0] = player.farmCrop;
+                    delete player.farmCrop; // 刪除舊欄位
+                }
+            }
+            if (!player.fishingState) player.fishingState = { active: false, startTime: 0, lastTick: 0, caught: { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 } };
+            if (!player.fishingState.caught) player.fishingState.caught = { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 };
+            if (player.fishingState.active && !player.fishingState.lastTick) player.fishingState.lastTick = Date.now();
+            if (!player.toolDura) player.toolDura = {}; // ✨ 補齊耐久度屬性
+            if (!player.woodState) player.woodState = { active: false, startTime: 0, lastTick: 0, caught: { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 } };
+            if (!player.woodState.caught) player.woodState.caught = { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 };
+            if (player.woodState.active && !player.woodState.lastTick) player.woodState.lastTick = Date.now();
 
             // 4. 補償機制：裝備超過 15 等
             let compensated = false;
@@ -190,6 +228,28 @@ function loadGame() {
     updateUI();
 }
 
+// ✨ 高效能離線掉落物計算 (避免大量迴圈導致網頁卡頓)
+function calcOfflineLoot(fakeKills, mobId) {
+    let dbMob = typeof MOB_DB !== 'undefined' ? MOB_DB[mobId] : null;
+    let offlineLoot = {};
+    if (!dbMob || !dbMob.drops || fakeKills <= 0) return offlineLoot;
+
+    dbMob.drops.forEach(drop => {
+        let expectedDrops = fakeKills * drop.chance;
+        let guaranteedDrops = Math.floor(expectedDrops);
+        let fractionalChance = expectedDrops - guaranteedDrops;
+        let finalCount = guaranteedDrops + (Math.random() < fractionalChance ? 1 : 0);
+
+        let multiplier = drop.qty || 1;
+        finalCount *= multiplier;
+
+        if (finalCount > 0) {
+            offlineLoot[drop.id] = (offlineLoot[drop.id] || 0) + finalCount;
+        }
+    });
+    return offlineLoot;
+}
+
 function postLoadInit() {
     validateEquippedSkills();
     cleanupBackSlots(); // ✨ 確保後排只有被動技能
@@ -218,6 +278,16 @@ function postLoadInit() {
                 let goldEarned = fakeKills * (MOB_DB[mobId].gold || 0);
                 player.exp += expEarned; player.gold += goldEarned;
 
+                // ✨ 離線掉落物結算
+                let loot = calcOfflineLoot(fakeKills, mobId);
+                let dropHtml = "";
+                for (let itemId in loot) {
+                    addItemToBag(itemId, loot[itemId]);
+                    let item = typeof getItem === 'function' ? getItem(itemId) : { name: itemId };
+                    dropHtml += `${item.name} x${loot[itemId]} `;
+                }
+                if (dropHtml === "") dropHtml = "無";
+
                 if (player.mapIdx === 0) { player.kills += fakeKills; }
                 else { player.kills = Math.min(10, player.kills + fakeKills); }
 
@@ -229,7 +299,7 @@ function postLoadInit() {
                 let warningHtml = isCapped ? `<br><span style="color:var(--danger); font-size:0.85em;">(已達掛機上限：${player.maxOfflineMinutes || 60} 分鐘。後續可透過道具擴充)</span>` : "";
 
                 // ✨ 補上登入時的自動關閉秒數
-                setTimeout(() => openModal("🌙 離線掛機結算", `妳離開了 ${formatHelperTime(offlineSec)}<br>系統自動為妳修練了 <b style="color:var(--quest);">${timeMsg}</b>${warningHtml}<br><br>斬殺約 ${fakeKills} 隻怪物。<br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`, "領取獎勵", null, false, 6), 1000);
+                setTimeout(() => openModal("🌙 離線掛機結算", `妳離開了 ${formatHelperTime(offlineSec)}<br>系統自動為妳修練了 <b style="color:var(--quest);">${timeMsg}</b>${warningHtml}<br><br>斬殺約 ${fakeKills} 隻怪物。<br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。<br><br>🎁 搜刮物資：<br><span style="color:#aaa">${dropHtml}</span>`, "領取獎勵", null, false, 6), 1000);
             }
         }
     }
@@ -265,6 +335,19 @@ document.addEventListener("visibilitychange", () => {
                     let goldEarned = fakeKills * (MOB_DB[mobId].gold || 0);
                     player.exp += expEarned; player.gold += goldEarned;
 
+                    // ✨ 神遊掉落物結算
+                    let loot = calcOfflineLoot(fakeKills, mobId);
+                    let dropHtml = "";
+                    let dropLog = [];
+                    for (let itemId in loot) {
+                        addItemToBag(itemId, loot[itemId]);
+                        let item = typeof getItem === 'function' ? getItem(itemId) : { name: itemId };
+                        dropHtml += `${item.name} x${loot[itemId]} `;
+                        dropLog.push(`${item.name} x${loot[itemId]}`);
+                    }
+                    if (dropHtml === "") dropHtml = "無";
+                    let dropLogStr = dropLog.length > 0 ? dropLog.join(", ") : "無";
+
                     if (player.mapIdx === 0) { player.kills += fakeKills; }
                     else { player.kills = Math.min(10, player.kills + fakeKills); }
 
@@ -273,9 +356,9 @@ document.addEventListener("visibilitychange", () => {
                     let timeMsg = formatHelperTime(actualElapsedSec);
                     let popMsg = `妳神遊了 ${formatHelperTime(elapsedSec)}<br>系統結算了 <b style="color:var(--quest);">${timeMsg}</b> 的收益。`;
                     if (isCapped) popMsg += `<br><span style="color:var(--danger); font-size:0.85em;">(已達掛機上限：${player.maxOfflineMinutes || 60} 分鐘)</span>`;
-                    popMsg += `<br><br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。`;
+                    popMsg += `<br><br>獲得 <span style="color:var(--quest)">${expEarned} 經驗</span>, <span style="color:var(--gold)">${goldEarned} 金幣</span>。<br><br>🎁 搜刮物資：<br><span style="color:#aaa">${dropHtml}</span>`;
 
-                    log(`🌙 【掛機結算】神遊了 ${formatHelperTime(elapsedSec)}，有效結算 ${timeMsg}。斬殺 ${fakeKills} 隻怪物，獲得 ${expEarned} 經驗, ${goldEarned} 金幣。`, "var(--gold)");
+                    log(`🌙 【掛機結算】神遊了 ${formatHelperTime(elapsedSec)}，結算 ${timeMsg}。斬殺 ${fakeKills} 隻，獲得 ${expEarned} 經驗, ${goldEarned} 金幣。掉落：${dropLogStr}`, "var(--gold)");
                     // ✨ 呼叫不暫停且 3 秒自動關閉的彈窗 (參數 6 是 autoCloseSec，也就是 6 秒)
                     setTimeout(() => openModal("🌙 掛機結算", popMsg, "領取", null, false, 6), 500);
                 }
@@ -650,10 +733,22 @@ function usePotion(isManual = false) {
     if (player.potions[pid] > 0) {
         if (player.hp >= getMaxHP() && isManual) return log("生命值已滿！");
 
-        player.potions[pid]--; let heal = pItem.value > 0 ? pItem.value : Math.floor(getMaxHP() * pItem.rate); player.hp = Math.min(getMaxHP(), player.hp + heal);
-        combatState.potionCd = 5.0; showDmg('p-box', `+${heal}`, 'lime');
-        if (currentView === 'battle' && !isPaused) {
-            writeCombatLog(`🍵 <span style="color:#4a90e2">${player.name || "妳"}</span> 飲用了 <b style="color:lime">${pItem.name}</b>，恢復了 <b style="color:white">${heal}</b> 點體力！`, 'player');
+        if (pItem.regen) {
+            player.potions[pid]--;
+            combatState.potionCd = 5.0;
+            if (!player.buffs) player.buffs = {};
+            player.buffs['f_regen'] = pItem.duration;
+            player.buffs['f_regen_val'] = pItem.regen;
+            showDmg('p-box', `持續恢復`, '#e67e22');
+            if (currentView === 'battle' && !isPaused) {
+                writeCombatLog(`🍲 <span style="color:#4a90e2">${player.name || "妳"}</span> 吃下了 <b style="color:#e67e22">${pItem.name}</b>，體力開始持續恢復！`, 'player');
+            }
+        } else {
+            player.potions[pid]--; let heal = pItem.value > 0 ? pItem.value : Math.floor(getMaxHP() * pItem.rate); player.hp = Math.min(getMaxHP(), player.hp + heal);
+            combatState.potionCd = 5.0; showDmg('p-box', `+${heal}`, 'lime');
+            if (currentView === 'battle' && !isPaused) {
+                writeCombatLog(`🍵 <span style="color:#4a90e2">${player.name || "妳"}</span> 飲用了 <b style="color:lime">${pItem.name}</b>，恢復了 <b style="color:white">${heal}</b> 點體力！`, 'player');
+            }
         }
         if (player.potions[pid] === 0) { log(`【系統】${pItem.name} 耗盡！`, "var(--danger)"); if (isManual) autoHealLogic(true); }
         updateUI(); return true;
@@ -695,6 +790,10 @@ function toggleHelper(id) {
         player.activeHelper = null;
         log(`☕ 【${HELPER_DB[id].name}】已退下休息。`, "#aaa");
     } else {
+        // ✨ 檢查是否正在遠征中
+        if (player.expeditions && player.expeditions.find(e => e.helperId === id)) {
+            return typeof showToast === 'function' ? showToast("該夥伴正在遠征中，無法上陣！", "var(--danger)") : null;
+        }
         player.activeHelper = id;
         combatState.helperSkillCd = HELPER_DB[id].skillCd;
         log(`✨ 【${HELPER_DB[id].name}】已加入戰鬥！`, "var(--quest)");
@@ -715,6 +814,7 @@ function getAtkVal() {
 function getDefVal() {
     let base = player.vit * 1 + ((player.gear.body || 0) * 1.5);
     if (player.activeHelper && HELPER_DB[player.activeHelper]) { base += HELPER_DB[player.activeHelper].passive(player).def || 0; }
+    if (player.buffs && player.buffs['def_boost'] > 0) base = Math.floor(base * EFFECT_MAP['def_boost'].multiplier);
     return base;
 }
 function getMatkVal() {
@@ -743,12 +843,15 @@ function getEvaPercent() {
         }
     } catch (e) { }
 
+    if (player.buffs && player.buffs['eva_boost'] > 0) base += EFFECT_MAP['eva_boost'].additive;
+
     // 最終天花板鎖定在 80% (確保滿裝滿敏的忍者不浪費屬性)
     return Math.min(80, base);
 }
 function getMaxHP() {
     let base = Math.floor(player.vit * 20 + 100);
     if (hasPassive('sect_shinto_p1')) base = Math.floor(base * 1.15); // ✨ 神道：神明庇佑 (+15%HP)
+    if (player.buffs && player.buffs['hp_boost'] > 0) base = Math.floor(base * EFFECT_MAP['hp_boost'].multiplier);
     return base;
 }
 
@@ -919,7 +1022,19 @@ function startBattleLoop() {
 
     if (player.buffs) {
         for (let key in player.buffs) {
-            if (player.buffs[key] > 0) player.buffs[key] = Math.max(0, player.buffs[key] - tickSec);
+            if (key === 'f_regen' && player.buffs[key] > 0) {
+                let prevTick = Math.ceil(player.buffs[key]);
+                player.buffs[key] = Math.max(0, player.buffs[key] - tickSec);
+                let currTick = Math.ceil(player.buffs[key]);
+                if (prevTick > currTick && currTick >= 0) {
+                    let heal = player.buffs['f_regen_val'] || 0;
+                    player.hp = Math.min(getMaxHP(), player.hp + heal);
+                    showDmg('p-box', `+${heal}`, '#2ecc71');
+                    writeCombatLog(`🍲 <b style="color:#2ecc71">【料理恢復】</b> 恢復了 <b style="color:white">${heal}</b> 點生命值。`, 'player');
+                }
+            } else {
+                if (player.buffs[key] > 0) player.buffs[key] = Math.max(0, player.buffs[key] - tickSec);
+            }
         }
     }
 
@@ -1143,6 +1258,7 @@ function startBattleLoop() {
             combatState.helperSkillCd = hdb.skillCd;
             if (hdb.skillType === 'heal') {
                 player.hp = Math.min(getMaxHP(), player.hp + hdb.skillVal); showDmg('p-box', `+${hdb.skillVal}`, 'var(--quest)');
+                writeCombatLog(`✨ <span style="color:#fdcb6e">【夥伴】 ${hdb.name}</span> 為妳恢復了 <b style="color:white">${hdb.skillVal}</b> 點生命值！`, 'player');
             } else if (hdb.skillType === 'attack' && (!isDummy ? monster.hp > 0 : true)) {
                 if (isDummy) {
                     combatState.zenDmgAccum += hdb.skillVal;
@@ -1152,13 +1268,20 @@ function startBattleLoop() {
                         combatState.totalDmgDealt += hdb.skillVal;
                         combatState.lastDmg = hdb.skillVal;
                     }
+                    writeCombatLog(`💥 <span style="color:#fdcb6e">【夥伴】 ${hdb.name}</span> 的攻擊對 <span style="color:#e74c3c">${monster.name}</span> 造成 <b style="color:white">${hdb.skillVal}</b> 點傷害。`, 'player');
                 }
-                else { monster.hp -= hdb.skillVal; showDmg('m-box', hdb.skillVal, '#fdcb6e'); log(`💥 夥伴援護攻擊！`, "var(--danger)"); }
+                else {
+                    monster.hp -= hdb.skillVal;
+                    showDmg('m-box', hdb.skillVal, '#fdcb6e');
+                    writeCombatLog(`💥 <span style="color:#fdcb6e">【夥伴】 ${hdb.name}</span> 的攻擊對 <span style="color:#e74c3c">${monster.name}</span> 造成 <b style="color:white">${hdb.skillVal}</b> 點傷害。`, 'player');
+                }
             } else if (hdb.skillType === 'seal' && !isDummy && monster.hp > 0) {
-                combatState.mobAtkTimer = Math.min(5.0, combatState.mobAtkTimer + hdb.skillVal); showDmg('m-box', "封印", 'var(--accent)'); log(`📜 夥伴施放定身符！`, "var(--accent)");
+                combatState.mobAtkTimer = Math.min(5.0, combatState.mobAtkTimer + hdb.skillVal); showDmg('m-box', "封印", 'var(--accent)');
+                writeCombatLog(`📜 <span style="color:#fdcb6e">【夥伴】 ${hdb.name}</span> 施放定身符，成功封印了 <span style="color:#e74c3c">${monster.name}</span> 的行動！`, 'player');
             } else if (hdb.skillType === 'defend') {
                 player.hp = Math.min(getMaxHP(), player.hp + hdb.skillVal);
-                showDmg('p-box', "[金剛罩]", 'var(--gold)'); log(`🛡️ 權助施放了金剛罩！`, "var(--gold)");
+                showDmg('p-box', "[金剛罩]", 'var(--gold)');
+                writeCombatLog(`🛡️ <span style="color:#fdcb6e">【夥伴】 ${hdb.name}</span> 施放了金剛罩！`, 'player');
             }
         }
     }
@@ -1373,8 +1496,37 @@ function handleVictory() {
 
     checkLevelUp();
 
-    // ✨ 核心修改 2：只要勾選了「重複本關」(repeatBoss) 或「自動挑戰」(autoBoss)，集滿10隻小怪就會強制自動打王！
-    if ((player.autoBoss || player.repeatBoss) && player.kills >= 10 && maps[player.mapIdx].boss) {
+    // ✨ 劇情攔截：無論是自動挑戰還是手動，只要打滿10隻就強制進入劇情
+    if (player.mapIdx === 2 && player.kills >= 10 && checkStory('seiichi_encounter_lite')) {
+        if (!player.hasMetBlacksmith) {
+            player.kills = 9; // 把擊殺數卡在 9
+            log("⚠️ 前方傳來極其狂暴的妖氣... 還是先回村莊的【鍛冶屋】弄點護具比較好。", "var(--danger)");
+            if (player.autoBoss) {
+                player.autoBoss = false; // 關閉自動挑戰，避免無限卡死
+                log("⚠️ 自動挑戰已暫停，請先返回結界之里。", "var(--danger)");
+                updateUI();
+            }
+            spawn(false);
+            return; // 中斷後續刷怪邏輯
+        } else {
+            isPaused = true;
+            log("📜 劇情觸發：前方傳來了激烈的戰鬥聲...", "var(--quest)");
+            if (typeof runSeiichiEncounterLite === 'function') runSeiichiEncounterLite();
+            else { isPaused = false; spawn(true); log("⚠️ 劇情模組未載入，已強制刷出首領。", "var(--danger)"); }
+            return; // 中斷後續刷怪邏輯
+        }
+    }
+
+    // ✨ 劇情攔截：擊敗石獅子後的結算對話 (條件: 打死的怪是b_lion，且前置對話已觸發過)
+    if (monster.id === 'b_lion' && checkStory('seiichi_victory_lite', 'seiichi_encounter_lite')) {
+        isPaused = true;
+        log("📜 劇情觸發：石獅子轟然倒塌...", "var(--quest)");
+        if (typeof runSeiichiVictoryLite === 'function') runSeiichiVictoryLite();
+        return; // 中斷後續刷怪邏輯，等待對話完畢再繼續
+    }
+
+    // ✨ 核心修改 2：分離「自動挑戰」與「重複本關」。只有「自動挑戰」才會自動生王。
+    if (player.autoBoss && player.kills >= 10 && maps[player.mapIdx].boss) {
         if (!monster.isBoss) log("⚔️ 擊殺達標，首領降臨！", "var(--danger)");
         spawn(true);
     } else {
@@ -1386,6 +1538,23 @@ function addItemToBag(id, qty) { let item = getItem(id); if (item.cat === 'rec')
 function resetCombatState() {
     // 使用 Object.assign 保留原有的試煉進度 (isSamuraiTrial 等)
     combatState = Object.assign(combatState || {}, { mobAtkTimer: 2.0, skillCds: [0, 0, 0, 0, 0, 0], slotSetupCds: [0, 0, 0, 0, 0, 0], zenTimer: 0, zenDmgAccum: 0, potionCd: 0, helperSkillCd: 0, nextHitCrit: false });
+}
+
+// ============================================================================
+// ✨ 通用劇情指令系統 (Story Progression System)
+// ============================================================================
+
+function checkStory(storyId, reqStoryId = null) {
+    if (!player.completedStories) player.completedStories = [];
+    if (player.completedStories.includes(storyId)) return false; // 已經觸發過，不再觸發
+    if (reqStoryId && !player.completedStories.includes(reqStoryId)) return false; // 前置劇情未完成，不能觸發
+    return true; // 條件滿足，可以觸發！
+}
+
+function markStoryDone(storyId) {
+    if (!player.completedStories) player.completedStories = [];
+    if (!player.completedStories.includes(storyId)) player.completedStories.push(storyId);
+    saveGame(false);
 }
 
 function handleDeath() {
@@ -1482,7 +1651,20 @@ function spawn(boss = false) {
 }
 
 function changeMap() { const sel = el('map-selector'); if (!sel) return; player.mapIdx = parseInt(sel.value); player.kills = 0; combatState.zenTimer = 0; combatState.zenDmgAccum = 0; spawn(); updateMapSelector(); }
-function manualBoss() { spawn(true); }
+function manualBoss() {
+    // ✨ 攔截：如果滿足主線劇情條件，強制攔截「挑戰BOSS」按鈕並轉換為觸發劇情
+    if (player.mapIdx === 2 && player.kills >= 10 && checkStory('seiichi_encounter_lite')) {
+        if (!player.hasMetBlacksmith) {
+            openModal("缺乏護具", "前方傳來極其狂暴的妖氣... 還是先回村莊的【鍛冶屋】弄點護具比較好。", "我知道了");
+            return;
+        }
+        isPaused = true;
+        log("📜 劇情觸發：前方傳來了激烈的戰鬥聲...", "var(--quest)");
+        if (typeof runSeiichiEncounterLite === 'function') runSeiichiEncounterLite();
+        return;
+    }
+    spawn(true);
+}
 
 // ✨ 新增：測試模式切換
 function switchTestDummy(type) {
@@ -1534,8 +1716,8 @@ function stopWork() {
 
         // ✨ 老闆的私下犒賞：設定最低打工時間防呆 (至少 10 分鐘)
         let workMinutes = Math.floor(elapsedSecs / 60);
-        if (workMinutes >= 10) { 
-            let dropChance = player.lvl <= 30 ? 1.0 : Math.min(1.0, 0.3 + workMinutes * 0.05); 
+        if (workMinutes >= 10) {
+            let dropChance = player.lvl <= 30 ? 1.0 : Math.min(1.0, 0.3 + workMinutes * 0.05);
             if (Math.random() < dropChance) {
                 let extraStone = player.lvl <= 30 ? (Math.floor(Math.random() * 3) + 2) : Math.floor(workMinutes / 10);
                 player.mats['m0'] = (player.mats['m0'] || 0) + extraStone;
@@ -1772,6 +1954,16 @@ function useShrineBuffItem(id) {
     let item = getItem(id);
     if ((player.mats[id] || 0) <= 0) return typeof showToast === 'function' ? showToast("行囊中沒有該道具。", "var(--danger)") : null;
 
+    // ✨ 攔截製作圖的點擊使用
+    if (id.startsWith('bp_')) {
+        if (useBlueprint(id)) {
+            player.mats[id]--;
+            updateUI();
+            if (typeof renderBag === 'function') renderBag();
+        }
+        return;
+    }
+
     player.mats[id]--;
 
     if (id === 's_omikuji') {
@@ -1827,7 +2019,7 @@ function buyShopItem(tab) {
         if (item.cat === 'rec') { if (!player.potions[itemId]) player.potions[itemId] = 0; player.potions[itemId] += buyCount; }
         else if (item.id === 'revive') { player.revives += buyCount; }
         else if (item.id === 'wash_star') { player.mats['wash_star'] = (player.mats['wash_star'] || 0) + buyCount; }
-        else { log("尚未實裝該類道具存入邏輯。"); }
+        else { player.mats[itemId] = (player.mats[itemId] || 0) + buyCount; } // ✨ 修復：支援製作圖與工具等一般素材入袋
     };
     if (player.gold >= totalCost) {
         player.gold -= totalCost; onBuySuccess(count); updateUI(); if (typeof updateShopInvDisplay === 'function') updateShopInvDisplay(); log(`🛍️ 購買成功！獲得 ${item.name} x${count}`, "var(--quest)"); if (typeof showToast === 'function') showToast(`- $${totalCost} 金幣`, "var(--danger)"); openModal("交易完成", `萬屋老闆點了點頭。<br><br>獲得：<span style="color:var(--quest); font-weight:bold;">${item.name} x${count}</span>`, "確認");
@@ -2160,8 +2352,422 @@ function checkSectRankUp() {
 }
 
 
+// ✨ 夥伴遠征系統核心邏輯
+const ALLOWED_EXPEDITION_HELPERS = ['h1', 'h4'];
+
+function startExpedition() {
+    let helperId = el('exp-helper-sel').value;
+    let mapIdx = parseInt(el('exp-map-sel').value);
+    let hours = parseInt(el('exp-time-sel').value);
+
+    if (!helperId || !mapIdx || !hours) return showToast("請完整選擇派遣資訊！", "var(--danger)");
+
+    if (!ALLOWED_EXPEDITION_HELPERS.includes(helperId)) return showToast("該夥伴目前不開放遠征。", "var(--danger)");
+    if (player.activeHelper === helperId) return showToast("該夥伴正在出戰中！", "var(--danger)");
+    if (player.expeditions && player.expeditions.find(e => e.helperId === helperId)) return showToast("該夥伴已經在遠征中！", "var(--danger)");
+
+    let requiredSecs = hours * 3600;
+    let currentSecs = player.helperTimes ? (player.helperTimes[helperId] || 0) : 0;
+    if (currentSecs < requiredSecs) return openModal("時數不足", "夥伴剩餘的合約時間不足以完成此次遠征。", "關閉");
+
+    player.helperTimes[helperId] -= requiredSecs;
+    if (!player.expeditions) player.expeditions = [];
+    player.expeditions.push({ helperId: helperId, mapIdx: mapIdx, startTime: Date.now(), duration: requiredSecs });
+
+    saveGame(false);
+    showToast("🏕️ 夥伴已出發遠征！", "var(--quest)");
+    if (typeof renderExpedition === 'function') renderExpedition();
+}
+
+function claimExpedition(eIdx) {
+    if (!player.expeditions || !player.expeditions[eIdx]) return;
+    let exp = player.expeditions[eIdx];
+
+    let elapsed = Math.floor((Date.now() - exp.startTime) / 1000);
+    if (elapsed < exp.duration) return showToast("遠征尚未完成！", "var(--danger)");
+
+    let m = maps[exp.mapIdx];
+    let killCount = Math.floor((exp.duration / 60) * 1.5);
+    let totalExp = 0, totalGold = 0, drops = {};
+
+    for (let i = 0; i < killCount; i++) {
+        let mobId = m.mobs[Math.floor(Math.random() * m.mobs.length)];
+        let dbMob = MOB_DB[mobId];
+        if (!dbMob) continue;
+
+        totalExp += (Number(dbMob.exp) || 0);
+        totalGold += (Number(dbMob.gold) || 0);
+        if (dbMob.drops) {
+            dbMob.drops.forEach(l => {
+                if (Math.random() < l.chance) {
+                    let amount = l.qty || 1;
+                    drops[l.id] = (drops[l.id] || 0) + amount;
+                }
+            });
+        }
+    }
+
+    player.exp = (Number(player.exp) || 0) + totalExp;
+    player.gold = (Number(player.gold) || 0) + totalGold;
+
+    let dropStrs = [];
+    for (let id in drops) {
+        addItemToBag(id, drops[id]);
+        dropStrs.push(`${getItem(id).name}x${drops[id]}`);
+    }
+
+    player.expeditions.splice(eIdx, 1);
+    saveGame(false);
+
+    let resultMsg = `遠征歸來，共斬殺 ${killCount} 體妖魔。<br><br>獲得經驗：${totalExp}<br>獲得金幣：$${totalGold}`;
+    resultMsg += `<br><br>📝 搜刮物資：<br>${dropStrs.length > 0 ? dropStrs.join(", ") : "無"}`;
+    openModal("🎁 遠征大豐收", resultMsg, "確認");
+    if (typeof renderExpedition === 'function') renderExpedition();
+}
+
+function cancelExpedition(eIdx) {
+    // ✨ 根據新設定，遠征不再允許緊急召回
+    if (typeof showToast === 'function') showToast("遠征一旦出發便無法召回。", "var(--danger)");
+}
+
+// --- 🍲 料理代工系統 ---
+function cookRecipe(idx) {
+    let recipe = typeof COOKING_RECIPES !== 'undefined' ? COOKING_RECIPES[idx] : null;
+    if (!recipe) return;
+
+    if (player.gold < recipe.cost) return typeof showToast === 'function' ? showToast("代工費不足！", "var(--danger)") : null;
+
+    // 檢查食材是否足夠 (會自動判斷是在 potions 分類還是 mats 分類)
+    for (let k in recipe.req) {
+        let item = getItem(k);
+        let own = item.cat === 'rec' ? (player.potions[k] || 0) : (player.mats[k] || 0);
+        if (own < recipe.req[k]) return typeof showToast === 'function' ? showToast("食材不足！", "var(--danger)") : null;
+    }
+
+    // 扣除費用與食材
+    player.gold -= recipe.cost;
+    for (let k in recipe.req) {
+        let item = getItem(k);
+        if (item.cat === 'rec') player.potions[k] -= recipe.req[k];
+        else player.mats[k] -= recipe.req[k];
+    }
+
+    addItemToBag(recipe.result, 1);
+
+    log(`🍲 烹飪完成！獲得了 【${getItem(recipe.result).name}】。`, "var(--quest)");
+    if (typeof showToast === 'function') showToast(`獲得 ${getItem(recipe.result).name}`, "lime");
+
+    saveGame(false);
+    updateUI();
+    if (typeof renderCook === 'function') renderCook();
+}
+
 window.onload = () => {
     initSlotScreen();
     setInterval(() => { if (!isPaused && currentSlotKey && player.name && !player.workStartTime) saveGame(false); }, 5000);
     setInterval(() => { if (player.workStartTime && currentView === 'village' && !el('sub-view').classList.contains('hidden')) showSubView('work'); }, 1000);
+
+    // ✨ 遠征完成全局檢查
+    setInterval(() => {
+        if (!player.expeditions || player.expeditions.length === 0 || !player.name) return;
+        let now = Date.now();
+        let shouldSave = false;
+        player.expeditions.forEach(exp => {
+            if (!exp.notified) {
+                let elapsed = Math.floor((now - exp.startTime) / 1000);
+                if (elapsed >= exp.duration) {
+                    exp.notified = true;
+                    shouldSave = true;
+                    let hName = (typeof HELPER_DB !== 'undefined' && HELPER_DB[exp.helperId]) ? HELPER_DB[exp.helperId].name : "夥伴";
+                    openModal("🏕️ 遠征完成", `【${hName}】已完成遠征探索！<br>請前往茶屋領取豐厚物資。`, "前往領取", () => {
+                        if (typeof switchView === 'function') switchView('village');
+                        if (typeof showSubView === 'function') {
+                            showSubView('teahouse');
+                            setTimeout(() => showSubView('expedition'), 100);
+                        }
+                    });
+                }
+            }
+        });
+        if (shouldSave) saveGame(false);
+    }, 5000);
+
+    // ✨ 漁場掛機實時結算與 UI 刷新器
+    setInterval(() => {
+        if (player.fishingState && player.fishingState.active) {
+            let now = Date.now();
+            if (!player.fishingState.lastTick) player.fishingState.lastTick = now;
+            let mins = Math.floor((now - player.fishingState.lastTick) / 60000);
+
+            if (mins > 0) {
+                player.fishingState.lastTick += mins * 60000;
+                let totalMins = Math.floor((now - player.fishingState.startTime) / 60000);
+
+                if (totalMins <= 480) { // 最高掛機 8 小時
+                    let fLvl = player.lifeSkills.fish.lvl;
+                    let fish1 = 0, fish2 = 0, fish3 = 0;
+                    let broken = false;
+
+                    for (let i = 0; i < mins; i++) {
+                        if (Math.random() < 0.40) {
+                            if (!consumeToolDura('tool_rod_1', 1)) { broken = true; break; }
+                            let roll = Math.random();
+                            if (fLvl >= 5 && roll < 0.10) fish3++;
+                            else if (fLvl >= 3 && roll < 0.35) fish2++;
+                            else fish1++;
+                        }
+                    }
+
+                    let totalFish = fish1 + fish2 + fish3;
+                    if (totalFish > 0) {
+                        player.fishingState.caught.m1 += fish1; player.fishingState.caught.m2 += fish2; player.fishingState.caught.m3 += fish3;
+                        player.fishingState.caught.exp += (fish1 * 5 + fish2 * 15 + fish3 * 50); player.fishingState.caught.dura += totalFish;
+
+                        if (fish1) addItemToBag('mat_fish_1', fish1);
+                        if (fish2) addItemToBag('mat_fish_2', fish2);
+                        if (fish3) addItemToBag('mat_fish_3', fish3);
+
+                        player.lifeSkills.fish.exp += (fish1 * 5 + fish2 * 15 + fish3 * 50);
+                        while (player.lifeSkills.fish.exp >= player.lifeSkills.fish.next) {
+                            player.lifeSkills.fish.lvl++; player.lifeSkills.fish.exp -= player.lifeSkills.fish.next; player.lifeSkills.fish.next = Math.floor(player.lifeSkills.fish.next * 1.5);
+                            log(`🎣 【生活職人】漁場等級提升至 Lv.${player.lifeSkills.fish.lvl}！`, "var(--gold)");
+                        }
+                        saveGame(false);
+
+                        // ✨ 即時獲得提示
+                        if (currentView === 'village' && typeof showToast === 'function') {
+                            if (fish3) showToast(`🎣 獲得 ${getItem('mat_fish_3').name}`, "var(--accent)");
+                            else if (fish2) showToast(`🎣 獲得 ${getItem('mat_fish_2').name}`, "var(--accent)");
+                            else if (fish1) showToast(`🎣 獲得 ${getItem('mat_fish_1').name}`, "var(--accent)");
+                        }
+                    }
+
+                    if (broken) { showToast("🎣 釣竿徹底損壞，自動收竿！", "var(--danger)"); stopFishing(); return; }
+                }
+            }
+
+            if (currentView === 'village' && !el('sub-view').classList.contains('hidden') && el('sub-content').innerHTML.includes('悠閒漁場')) { if (typeof renderFish === 'function') renderFish(); }
+        }
+
+        // ✨ 迷霧林場伐木掛機結算
+        if (player.woodState && player.woodState.active) {
+            let now = Date.now();
+            if (!player.woodState.lastTick) player.woodState.lastTick = now;
+            let mins = Math.floor((now - player.woodState.lastTick) / 60000);
+
+            if (mins > 0) {
+                player.woodState.lastTick += mins * 60000;
+                let totalMins = Math.floor((now - player.woodState.startTime) / 60000);
+                if (totalMins <= 480) {
+                    let wLvl = player.lifeSkills.wood.lvl;
+                    let w1 = 0, w2 = 0, w3 = 0; let broken = false; let outOfStam = false;
+                    for (let i = 0; i < mins; i++) {
+                        if (player.stamina < 5) { outOfStam = true; break; } // 每分鐘消耗 5 點體力
+                        if (!consumeToolDura('tool_axe_1', 1)) { broken = true; break; }
+                        player.stamina -= 5; player.woodState.caught.stam += 5; player.woodState.caught.dura += 1;
+                        let roll = Math.random();
+                        if (wLvl >= 5 && roll < 0.10) w3++; else if (wLvl >= 3 && roll < 0.35) w2++; else w1++;
+                    }
+                    let totalWood = w1 + w2 + w3;
+                    if (totalWood > 0) {
+                        player.woodState.caught.m1 += w1; player.woodState.caught.m2 += w2; player.woodState.caught.m3 += w3;
+                        let expGain = (w1 * 10 + w2 * 20 + w3 * 50); player.woodState.caught.exp += expGain;
+                        if (w1) addItemToBag('mat_wood_1', w1); if (w2) addItemToBag('mat_wood_2', w2); if (w3) addItemToBag('mat_wood_3', w3);
+                        player.lifeSkills.wood.exp += expGain;
+                        while (player.lifeSkills.wood.exp >= player.lifeSkills.wood.next) {
+                            player.lifeSkills.wood.lvl++; player.lifeSkills.wood.exp -= player.lifeSkills.wood.next; player.lifeSkills.wood.next = Math.floor(player.lifeSkills.wood.next * 1.5);
+                            log(`🪓 【生活職人】林場等級提升至 Lv.${player.lifeSkills.wood.lvl}！`, "var(--gold)");
+                        }
+                        saveGame(false);
+                        if (currentView === 'village' && typeof showToast === 'function') {
+                            if (w3) showToast(`🪓 獲得 ${getItem('mat_wood_3').name}`, "var(--mat)");
+                            else if (w2) showToast(`🪓 獲得 ${getItem('mat_wood_2').name}`, "var(--mat)");
+                            else if (w1) showToast(`🪓 獲得 ${getItem('mat_wood_1').name}`, "var(--mat)");
+                        }
+                    }
+                    if (outOfStam) { showToast("🪓 體力耗盡，自動收工！", "var(--danger)"); stopWoodchopping(); return; }
+                    if (broken) { showToast("🪓 斧頭徹底損壞，自動收工！", "var(--danger)"); stopWoodchopping(); return; }
+                }
+            }
+            if (currentView === 'village' && !el('sub-view').classList.contains('hidden') && el('sub-content').innerHTML.includes('迷霧林場')) { if (typeof renderWood === 'function') renderWood(); }
+        }
+    }, 1000);
 };
+
+// --- ✨ 製作圖與藍圖系統 ---
+function checkBlueprint(id) {
+    return player.blueprints && player.blueprints.includes(id);
+}
+
+function useBlueprint(id) {
+    if (!player.blueprints) player.blueprints = [];
+    if (player.blueprints.includes(id)) {
+        if (typeof showToast === 'function') showToast("已經領悟過這個製作圖了！", "var(--danger)");
+        return false;
+    }
+    player.blueprints.push(id);
+    if (typeof showToast === 'function') showToast("✨ 成功領悟新的工具製作法！", "var(--quest)");
+    saveGame(false);
+    return true;
+}
+
+// --- ✨ 工具耐久度消耗系統 ---
+function consumeToolDura(toolId, amount = 1) {
+    if ((player.mats[toolId] || 0) <= 0) return false;
+    let item = typeof getItem === 'function' ? getItem(toolId) : null;
+    if (!item || !item.maxDura) return true; // 沒有耐久設定的工具直接通行
+
+    if (player.toolDura[toolId] === undefined) player.toolDura[toolId] = item.maxDura;
+    player.toolDura[toolId] -= amount;
+
+    if (player.toolDura[toolId] <= 0) {
+        player.mats[toolId]--; // 壞掉一把
+        if (player.mats[toolId] > 0) {
+            player.toolDura[toolId] = item.maxDura; // 自動換上新的一把
+            if (typeof showToast === 'function') showToast(`一把【${item.name}】損壞了，已自動更換備用工具。`, "var(--danger)");
+        } else {
+            player.toolDura[toolId] = 0;
+            if (typeof showToast === 'function') showToast(`【${item.name}】已徹底損壞，請至萬屋重新購買！`, "var(--danger)");
+        }
+    }
+    return true;
+}
+
+// --- ✨ 農田種植與收穫邏輯 ---
+function plantSeed(seedId, slotIdx) {
+    let seed = typeof getItem === 'function' ? getItem(seedId) : null;
+    if (!seed || seed.cat !== 'seed') return;
+    if ((player.mats['tool_hoe_1'] || 0) <= 0) return typeof showToast === 'function' ? showToast("缺少農具！無法播種", "var(--danger)") : null;
+
+    player.mats[seedId]--;
+    consumeToolDura('tool_hoe_1', 1); // ✨ 播種扣除 1 點鋤頭耐久
+
+    let durationMs = (seed.growTime || 60) * 60 * 1000;
+    let now = Date.now();
+
+    if (!player.farmCrops) player.farmCrops = [null, null, null, null];
+    player.farmCrops[slotIdx] = { seedId: seedId, startTime: now, endTime: now + durationMs };
+
+    if (typeof showToast === 'function') showToast(`🌱 成功種下 ${seed.name}！`, "lime");
+    saveGame(false);
+    if (typeof renderFarm === 'function') renderFarm();
+}
+
+// --- ✨ 生活職人與體力機制 (Stamina System) ---
+function checkStaminaRegen() {
+    if (!player.staminaLastRefill) player.staminaLastRefill = Date.now();
+    let now = Date.now();
+    let elapsed = now - player.staminaLastRefill;
+    let fourHours = 4 * 60 * 60 * 1000; // 現實時間 4 小時 (毫秒)
+
+    if (elapsed >= fourHours) {
+        player.stamina = player.maxStamina;
+        player.staminaLastRefill = now;
+        if (typeof updateUI === 'function') updateUI();
+    }
+}
+
+function useStamina(amount) {
+    checkStaminaRegen(); // 使用前先檢查是否已經可以補滿
+    if (player.stamina >= amount) {
+        player.stamina -= amount;
+        if (typeof updateUI === 'function') updateUI();
+        saveGame(false);
+        return true;
+    } else {
+        if (typeof showToast === 'function') showToast("❌ 體力不足！請等待恢復或至旅籠屋歇息。", "var(--danger)");
+        return false;
+    }
+}
+
+function harvestCrop(slotIdx) {
+    if (!player.farmCrops || !player.farmCrops[slotIdx]) return;
+    let crop = player.farmCrops[slotIdx];
+    if (Date.now() < crop.endTime) return typeof showToast === 'function' ? showToast("作物還沒成熟！", "var(--danger)") : null;
+
+    let seed = typeof getItem === 'function' ? getItem(crop.seedId) : null;
+    if (!seed) { player.farmCrops[slotIdx] = null; return; }
+    let resultItem = seed.yieldId || 'p1';
+    let yieldQty = seed.yieldQty || 1;
+
+    addItemToBag(resultItem, yieldQty);
+    if (typeof showToast === 'function') showToast(`🌾 收穫了 ${getItem(resultItem).name} x${yieldQty}`, "var(--quest)");
+
+    player.lifeSkills.farm.exp += (seed.exp || 10);
+    while (player.lifeSkills.farm.exp >= player.lifeSkills.farm.next) {
+        player.lifeSkills.farm.lvl++;
+        player.lifeSkills.farm.exp -= player.lifeSkills.farm.next;
+        player.lifeSkills.farm.next = Math.floor(player.lifeSkills.farm.next * 1.5);
+        log(`🌾 【生活職人】農田等級提升至 Lv.${player.lifeSkills.farm.lvl}！`, "var(--gold)");
+    }
+
+    player.farmCrops[slotIdx] = null;
+    saveGame(false);
+    if (typeof renderFarm === 'function') renderFarm();
+}
+
+// --- ✨ 掛機釣魚邏輯 ---
+function startFishing() {
+    if ((player.mats['tool_rod_1'] || 0) <= 0) return typeof showToast === 'function' ? showToast("請先裝備【簡易釣竿】！", "var(--danger)") : null;
+    player.fishingState = { active: true, startTime: Date.now(), lastTick: Date.now(), caught: { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 } };
+    if (typeof showToast === 'function') showToast("🎣 已拋下釣竿，開始靜心垂釣...", "var(--accent)");
+    saveGame(false);
+    if (typeof renderFish === 'function') renderFish();
+}
+
+function stopFishing() {
+    if (!player.fishingState || !player.fishingState.active) return;
+    let elapsedMins = Math.floor((Date.now() - player.fishingState.startTime) / 60000);
+    let caught = player.fishingState.caught || { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 };
+    player.fishingState.active = false;
+    player.fishingState.startTime = 0;
+
+    if (caught.m1 === 0 && caught.m2 === 0 && caught.m3 === 0) {
+        if (elapsedMins < 1) {
+            if (typeof showToast === 'function') showToast("時間太短，連水草都沒釣到。", "#888");
+        } else {
+            openModal("🎣 毫無所獲", `妳在水邊靜坐了 ${elapsedMins} 分鐘，但似乎運氣不佳，什麼都沒釣到...`, "真倒楣");
+        }
+    } else {
+        let logMsg = `釣魚歸來 (掛機 ${elapsedMins} 分鐘)：`;
+        if (caught.m1) logMsg += ` 鰷魚x${caught.m1}`;
+        if (caught.m2) logMsg += ` 香魚x${caught.m2}`;
+        if (caught.m3) logMsg += ` 錦鯉x${caught.m3}`;
+        logMsg += ` (消耗耐久 ${caught.dura}，漁場經驗 +${caught.exp})`;
+
+        openModal("🎣 滿載而歸", logMsg.replace(/：/, "：<br><br><span style='color:var(--quest);'>").replace(/\(/, "</span><br><br><span style='color:#aaa; font-size:0.85em;'>(") + "</span>", "收下漁獲");
+    }
+
+    saveGame(false);
+    if (typeof renderFish === 'function') renderFish();
+}
+
+// --- ✨ 林場伐木邏輯 ---
+function startWoodchopping() {
+    if ((player.mats['tool_axe_1'] || 0) <= 0) return typeof showToast === 'function' ? showToast("缺少斧具！請先購買", "var(--danger)") : null;
+    if (player.stamina < 5) return typeof showToast === 'function' ? showToast("體力不足以進入林場！", "var(--danger)") : null;
+    player.woodState = { active: true, startTime: Date.now(), lastTick: Date.now(), caught: { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 } };
+    if (typeof showToast === 'function') showToast("🪓 已進入迷霧林場，開始伐木...", "var(--mat)");
+    saveGame(false);
+    if (typeof renderWood === 'function') renderWood();
+}
+
+function stopWoodchopping() {
+    if (!player.woodState || !player.woodState.active) return;
+    let elapsedMins = Math.floor((Date.now() - player.woodState.startTime) / 60000);
+    let caught = player.woodState.caught || { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 };
+    player.woodState.active = false;
+    player.woodState.startTime = 0;
+
+    if (caught.m1 === 0 && caught.m2 === 0 && caught.m3 === 0) {
+        if (elapsedMins < 1) typeof showToast === 'function' ? showToast("時間太短，還沒砍倒樹。", "#888") : null;
+        else openModal("🪓 毫無所獲", `妳在林場奮力揮砍了 ${elapsedMins} 分鐘，但沒獲取到有用的木材...`, "真累人");
+    } else {
+        let logMsg = `伐木歸來 (掛機 ${elapsedMins} 分鐘)：`;
+        if (caught.m1) logMsg += ` 朽木x${caught.m1}`; if (caught.m2) logMsg += ` 堅韌原木x${caught.m2}`; if (caught.m3) logMsg += ` 靈氣神木x${caught.m3}`;
+        logMsg += ` (消耗體力 ${caught.stam}，耐久 ${caught.dura}，林場經驗 +${caught.exp})<br><br><span style="color:#aaa; font-size:0.85em;">(※取得的木材未來可用於鍛造高階武器與裝備)</span>`;
+        openModal("🪓 滿載而歸", logMsg.replace(/：/, "：<br><br><span style='color:var(--mat);'>").replace(/\(/, "</span><br><br><span style='color:#aaa; font-size:0.85em;'>(") + "</span>", "收下木材");
+    }
+    saveGame(false);
+    if (typeof renderWood === 'function') renderWood();
+}
