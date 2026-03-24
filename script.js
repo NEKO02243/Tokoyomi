@@ -2479,7 +2479,16 @@ window.onload = () => {
                     exp.notified = true;
                     shouldSave = true;
                     let hName = (typeof HELPER_DB !== 'undefined' && HELPER_DB[exp.helperId]) ? HELPER_DB[exp.helperId].name : "夥伴";
-                    openModal("🏕️ 遠征完成", `【${hName}】已完成遠征探索！<br>請前往茶屋領取豐厚物資。`, "前往領取", () => {
+                    
+                    // ✨ 防卡死機制：判斷玩家是否處於無法中斷的掛機狀態
+                    let isBusy = (player.fishingState && player.fishingState.active) || 
+                                 (player.woodState && player.woodState.active) || 
+                                 player.workStartTime || isResting;
+                    let btnText = isBusy ? "我知道了" : "前往領取";
+
+                    openModal("🏕️ 遠征完成", `【${hName}】已完成遠征探索！<br>請前往茶屋領取豐厚物資。`, btnText, () => {
+                        if (isBusy) return; // 如果在釣魚/伐木/打工中，不強制切換畫面，避免 UI 覆蓋卡死
+                        
                         if (typeof switchView === 'function') switchView('village');
                         if (typeof showSubView === 'function') {
                             showSubView('teahouse');
@@ -2515,6 +2524,9 @@ window.onload = () => {
                             if (fLvl >= 5 && roll < 0.10) fish3++;
                             else if (fLvl >= 3 && roll < 0.35) fish2++;
                             else fish1++;
+                            
+                            // ✨ 每次消耗耐久後，檢查是否已經沒有備用釣竿了，如果沒有就立刻中斷
+                            if ((player.mats['tool_rod_1'] || 0) <= 0) { broken = true; break; }
                         }
                     }
 
@@ -2543,6 +2555,12 @@ window.onload = () => {
                     }
 
                     if (broken) { showToast("🎣 釣竿徹底損壞，自動收竿！", "var(--danger)"); stopFishing(); return; }
+                    if (broken) { 
+                        showToast("🎣 釣竿徹底損壞，自動收竿！", "var(--danger)"); 
+                        stopFishing(); 
+                        if (currentView === 'village') showSubView('lifeSkills'); // ✨ 自動跳轉回領地畫面
+                        return; 
+                    }
                 }
             }
 
@@ -2567,6 +2585,9 @@ window.onload = () => {
                         player.stamina -= 5; player.woodState.caught.stam += 5; player.woodState.caught.dura += 1;
                         let roll = Math.random();
                         if (wLvl >= 5 && roll < 0.10) w3++; else if (wLvl >= 3 && roll < 0.35) w2++; else w1++;
+                        
+                        // ✨ 每次消耗耐久後，檢查是否已經沒有備用斧頭了，如果沒有就立刻中斷
+                        if ((player.mats['tool_axe_1'] || 0) <= 0) { broken = true; break; }
                     }
                     let totalWood = w1 + w2 + w3;
                     if (totalWood > 0) {
@@ -2587,6 +2608,18 @@ window.onload = () => {
                     }
                     if (outOfStam) { showToast("🪓 體力耗盡，自動收工！", "var(--danger)"); stopWoodchopping(); return; }
                     if (broken) { showToast("🪓 斧頭徹底損壞，自動收工！", "var(--danger)"); stopWoodchopping(); return; }
+                    if (outOfStam) { 
+                        showToast("🪓 體力耗盡，自動收工！", "var(--danger)"); 
+                        stopWoodchopping(); 
+                        if (currentView === 'village') showSubView('lifeSkills'); // ✨ 自動跳轉回領地畫面
+                        return; 
+                    }
+                    if (broken) { 
+                        showToast("🪓 斧頭徹底損壞，自動收工！", "var(--danger)"); 
+                        stopWoodchopping(); 
+                        if (currentView === 'village') showSubView('lifeSkills'); // ✨ 自動跳轉回領地畫面
+                        return; 
+                    }
                 }
             }
             if (currentView === 'village' && !el('sub-view').classList.contains('hidden') && el('sub-content').innerHTML.includes('迷霧林場')) { if (typeof renderWood === 'function') renderWood(); }

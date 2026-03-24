@@ -136,10 +136,52 @@ function runSeiichiVictoryLite() {
                     log("🎁 楠木誠一臨走前塞給妳一些高級補給品。", "var(--quest)");
                 }
 
-                // 恢復遊戲循環，刷出下一張地圖的怪
-                isPaused = false;
-                spawn(false);
-                if (currentView === 'battle' && typeof startBattleLoop === 'function') startBattleLoop();
+                // ✨ 修正 BUG：在轉場前強制刷新一隻普通怪物，清除 Boss 殘留狀態，防止切換畫面時觸發「逃離首領」警告
+                if (typeof spawn === 'function') spawn(false);
+
+                // 開始黑幕轉場特效，強制傳送回茶屋
+                let fade = document.createElement('div');
+                fade.style.position = 'fixed';
+                fade.style.top = '0'; fade.style.left = '0';
+                fade.style.width = '100vw'; fade.style.height = '100vh';
+                fade.style.backgroundColor = 'black';
+                fade.style.opacity = '0';
+                fade.style.transition = 'opacity 0.5s ease';
+                fade.style.zIndex = '3000';
+                fade.style.pointerEvents = 'all'; // 阻擋玩家在這段期間亂點
+                document.body.appendChild(fade);
+
+                // 觸發淡入
+                setTimeout(() => { fade.style.opacity = '1'; }, 10);
+
+                // 等待 0.5 秒全黑後切換畫面，並開始淡出與新劇情
+                setTimeout(() => {
+                    if (typeof switchView === 'function') switchView('village');
+                    // ✨ 強制使用 executeSwitchView 忽略任何戰鬥中斷檢查
+                    if (typeof executeSwitchView === 'function') executeSwitchView('village');
+                    else if (typeof switchView === 'function') switchView('village');
+                    if (typeof showSubView === 'function') showSubView('teahouse');
+
+                    setTimeout(() => {
+                        fade.style.opacity = '0';
+
+                        // 螢火茶屋的後續劇情
+                        StoryManager.show("老闆娘 螢", "哎呀，旅人，妳回來啦。看妳這身風塵僕僕的樣子，聽說妳在竹林那邊弄出了不小的動靜呢。", () => {
+                            StoryManager.show("老闆娘 螢", "而且……還跟『御庭』的青衛隊扯上關係了？", () => {
+                                StoryManager.show("老闆娘 螢", "（輕哼一聲，語氣帶著不屑）那群穿著體面護甲的傢伙，平時只知道躲在安全的城牆後面。現在外頭魔物猖獗，才假惺惺地跑到外圍來『視察』。", () => {
+                                    StoryManager.show("老闆娘 螢", "他們突然出現在這平靜的結界之里附近，絕對不是單純為了討伐魔物那麼簡單。肯定是為了某種政治目的……或者在找什麼人。", () => {
+                                        StoryManager.show("老闆娘 螢", "總之，妳自己多留個心眼。御庭的水很深，別被他們冠冕堂皇的說辭給騙了。", () => {
+                                            StoryManager.show("老闆娘 螢", "好啦，不說這些掃興的事了。既然平安回來了，就喝杯熱茶，好好休息一下吧。", () => {
+                                                StoryManager.hide();
+                                                setTimeout(() => { fade.remove(); }, 500); // 淡出完成後移除 DOM
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    }, 200); // 稍微停頓 0.2 秒再淡出更有感覺
+                }, 500);
             });
         });
     });
