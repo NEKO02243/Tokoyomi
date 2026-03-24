@@ -304,13 +304,28 @@ function postLoadInit() {
         }
     }
 
+    // ✨ 新增：強制斷開掛機狀態 (F5 重新整理即視為中止)
+    if (player.workStartTime) player.workStartTime = null;
+    if (player.fishingState && player.fishingState.active) {
+        player.fishingState.active = false;
+        player.fishingState.startTime = 0;
+        player.fishingState.caught = { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 };
+    }
+    if (player.woodState && player.woodState.active) {
+        player.woodState.active = false;
+        player.woodState.startTime = 0;
+        player.woodState.caught = { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 };
+    }
+    saveGame(false);
+
     if (!player.hasSeenIntro) {
         isPaused = true;
         runIntro();
     } else {
-        if (currentView === 'battle' && !player.workStartTime) startBattleLoop();
+        if (currentView === 'battle') startBattleLoop();
     }
-    if (player.workStartTime) { isPaused = true; switchView('village'); showSubView('work'); }
+
+
 }
 
 
@@ -1698,9 +1713,19 @@ function executeSelectedSell() {
 }
 
 function startWork() { player.workStartTime = Date.now(); isPaused = true; log("🏃 換上圍裙，開始在居酒屋幫忙...", "var(--gold)"); showSubView('work'); }
-function stopWork() {
+function stopWork(isAbort = false) {
     let now = Date.now();
     if (!player.workStartTime) player.workStartTime = now;
+    
+    if (isAbort) {
+        log("🏃 妳中途翹班逃走了，老闆在後頭大罵...", "#888");
+        player.workStartTime = null;
+        isPaused = false;
+        updateUI();
+        if (currentView === 'village') showSubView('izakaya');
+        return;
+    }
+
     let hourlyRate = 1200 + (player.lvl * 100);
     if (player.activeHelper && HELPER_DB[player.activeHelper] && HELPER_DB[player.activeHelper].workBonus) {
         hourlyRate *= HELPER_DB[player.activeHelper].workBonus.rate;
@@ -1714,7 +1739,6 @@ function stopWork() {
         log(`💰 老闆：「辛苦啦！」獲得了 $${earn.toLocaleString()}。`, "var(--gold)");
         if (typeof showToast === 'function') showToast(`+ $${earn} 金幣`, "var(--gold)");
 
-        // ✨ 老闆的私下犒賞：設定最低打工時間防呆 (至少 10 分鐘)
         let workMinutes = Math.floor(elapsedSecs / 60);
         if (workMinutes >= 10) {
             let dropChance = player.lvl <= 30 ? 1.0 : Math.min(1.0, 0.3 + workMinutes * 0.05);
@@ -2532,25 +2556,19 @@ window.onload = () => {
 
                     let totalFish = fish1 + fish2 + fish3;
                     if (totalFish > 0) {
-                        player.fishingState.caught.m1 += fish1; player.fishingState.caught.m2 += fish2; player.fishingState.caught.m3 += fish3;
-                        player.fishingState.caught.exp += (fish1 * 5 + fish2 * 15 + fish3 * 50); player.fishingState.caught.dura += totalFish;
-
-                        if (fish1) addItemToBag('mat_fish_1', fish1);
-                        if (fish2) addItemToBag('mat_fish_2', fish2);
-                        if (fish3) addItemToBag('mat_fish_3', fish3);
-
-                        player.lifeSkills.fish.exp += (fish1 * 5 + fish2 * 15 + fish3 * 50);
-                        while (player.lifeSkills.fish.exp >= player.lifeSkills.fish.next) {
-                            player.lifeSkills.fish.lvl++; player.lifeSkills.fish.exp -= player.lifeSkills.fish.next; player.lifeSkills.fish.next = Math.floor(player.lifeSkills.fish.next * 1.5);
-                            log(`🎣 【生活職人】漁場等級提升至 Lv.${player.lifeSkills.fish.lvl}！`, "var(--gold)");
-                        }
+                        player.fishingState.caught.m1 += fish1; 
+                        player.fishingState.caught.m2 += fish2; 
+                        player.fishingState.caught.m3 += fish3;
+                        player.fishingState.caught.exp += (fish1 * 5 + fish2 * 15 + fish3 * 50); 
+                        player.fishingState.caught.dura += totalFish;
+                        
+                        // ✨ 不再於此處 addItemToBag，改由 stopFishing 結算一次發給
+                        // 不再自動升級 exp，改由 stopFishing 處理
                         saveGame(false);
 
-                        // ✨ 即時獲得提示
                         if (currentView === 'village' && typeof showToast === 'function') {
-                            if (fish3) showToast(`🎣 獲得 ${getItem('mat_fish_3').name}`, "var(--accent)");
-                            else if (fish2) showToast(`🎣 獲得 ${getItem('mat_fish_2').name}`, "var(--accent)");
-                            else if (fish1) showToast(`🎣 獲得 ${getItem('mat_fish_1').name}`, "var(--accent)");
+                            if (fish3) showToast(`🎣 釣到了 ${getItem('mat_fish_3').name}！(尚未結算)`, "var(--accent)");
+                            else if (totalFish > 0) showToast(`🎣 魚兒上鉤了！`, "var(--accent)");
                         }
                     }
 
@@ -2591,19 +2609,18 @@ window.onload = () => {
                     }
                     let totalWood = w1 + w2 + w3;
                     if (totalWood > 0) {
-                        player.woodState.caught.m1 += w1; player.woodState.caught.m2 += w2; player.woodState.caught.m3 += w3;
-                        let expGain = (w1 * 10 + w2 * 20 + w3 * 50); player.woodState.caught.exp += expGain;
-                        if (w1) addItemToBag('mat_wood_1', w1); if (w2) addItemToBag('mat_wood_2', w2); if (w3) addItemToBag('mat_wood_3', w3);
-                        player.lifeSkills.wood.exp += expGain;
-                        while (player.lifeSkills.wood.exp >= player.lifeSkills.wood.next) {
-                            player.lifeSkills.wood.lvl++; player.lifeSkills.wood.exp -= player.lifeSkills.wood.next; player.lifeSkills.wood.next = Math.floor(player.lifeSkills.wood.next * 1.5);
-                            log(`🪓 【生活職人】林場等級提升至 Lv.${player.lifeSkills.wood.lvl}！`, "var(--gold)");
-                        }
+                        player.woodState.caught.m1 += w1; 
+                        player.woodState.caught.m2 += w2; 
+                        player.woodState.caught.m3 += w3;
+                        let expGain = (w1 * 10 + w2 * 20 + w3 * 50); 
+                        player.woodState.caught.exp += expGain;
+                        
+                        // ✨ 工具包不再此處更新，改由 stopWoodchopping 處理
                         saveGame(false);
+                        
                         if (currentView === 'village' && typeof showToast === 'function') {
-                            if (w3) showToast(`🪓 獲得 ${getItem('mat_wood_3').name}`, "var(--mat)");
-                            else if (w2) showToast(`🪓 獲得 ${getItem('mat_wood_2').name}`, "var(--mat)");
-                            else if (w1) showToast(`🪓 獲得 ${getItem('mat_wood_1').name}`, "var(--mat)");
+                            if (w3) showToast(`🪓 砍到了 ${getItem('mat_wood_3').name}！(尚未結算)`, "var(--mat)");
+                            else if (totalWood > 0) showToast(`🪓 獲得木材了！`, "var(--mat)");
                         }
                     }
                     if (outOfStam) { showToast("🪓 體力耗盡，自動收工！", "var(--danger)"); stopWoodchopping(); return; }
@@ -2748,10 +2765,38 @@ function startFishing() {
     if (typeof renderFish === 'function') renderFish();
 }
 
-function stopFishing() {
+function stopFishing(isAbort = false) {
     if (!player.fishingState || !player.fishingState.active) return;
+    
+    if (isAbort) {
+        player.fishingState.active = false;
+        player.fishingState.startTime = 0;
+        player.fishingState.caught = { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 };
+        log("🎣 妳心不在焉地收起了釣竿，這次垂釣一無所獲。", "#888");
+        saveGame(false);
+        if (typeof renderFish === 'function') renderFish();
+        return;
+    }
+
     let elapsedMins = Math.floor((Date.now() - player.fishingState.startTime) / 60000);
     let caught = player.fishingState.caught || { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0 };
+    
+    // ✨ 正式結算：將漁獲加入行囊
+    if (caught.m1) addItemToBag('mat_fish_1', caught.m1);
+    if (caught.m2) addItemToBag('mat_fish_2', caught.m2);
+    if (caught.m3) addItemToBag('mat_fish_3', caught.m3);
+    
+    // 增加經驗值與等級
+    if (caught.exp > 0) {
+        player.lifeSkills.fish.exp += caught.exp;
+        while (player.lifeSkills.fish.exp >= player.lifeSkills.fish.next) {
+            player.lifeSkills.fish.lvl++; 
+            player.lifeSkills.fish.exp -= player.lifeSkills.fish.next; 
+            player.lifeSkills.fish.next = Math.floor(player.lifeSkills.fish.next * 1.5);
+            log(`🎣 【生活職人】漁場等級提升至 Lv.${player.lifeSkills.fish.lvl}！`, "var(--gold)");
+        }
+    }
+
     player.fishingState.active = false;
     player.fishingState.startTime = 0;
 
@@ -2768,7 +2813,7 @@ function stopFishing() {
         if (caught.m3) logMsg += ` 錦鯉x${caught.m3}`;
         logMsg += ` (消耗耐久 ${caught.dura}，漁場經驗 +${caught.exp})`;
 
-        openModal("🎣 滿載而歸", logMsg.replace(/：/, "：<br><br><span style='color:var(--quest);'>").replace(/\(/, "</span><br><br><span style='color:#aaa; font-size:0.85em;'>(") + "</span>", "收下漁獲");
+        openModal("🎣 滿載而歸", logMsg.replace(/：/, "：<br><br><span style='color:var(--accent);'>").replace(/\(/, "</span><br><br><span style='color:#aaa; font-size:0.85em;'>(") + "</span>", "收下漁獲");
     }
 
     saveGame(false);
@@ -2785,10 +2830,38 @@ function startWoodchopping() {
     if (typeof renderWood === 'function') renderWood();
 }
 
-function stopWoodchopping() {
+function stopWoodchopping(isAbort = false) {
     if (!player.woodState || !player.woodState.active) return;
+
+    if (isAbort) {
+        player.woodState.active = false;
+        player.woodState.startTime = 0;
+        player.woodState.caught = { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 };
+        log("🪓 妳中途離開了林場，看來今天的體力都白費了。", "#888");
+        saveGame(false);
+        if (typeof renderWood === 'function') renderWood();
+        return;
+    }
+
     let elapsedMins = Math.floor((Date.now() - player.woodState.startTime) / 60000);
     let caught = player.woodState.caught || { m1: 0, m2: 0, m3: 0, exp: 0, dura: 0, stam: 0 };
+    
+    // ✨ 正式結算：將木材加入行囊
+    if (caught.m1) addItemToBag('mat_wood_1', caught.m1);
+    if (caught.m2) addItemToBag('mat_wood_2', caught.m2);
+    if (caught.m3) addItemToBag('mat_wood_3', caught.m3);
+    
+    // 增加經驗值與等級
+    if (caught.exp > 0) {
+        player.lifeSkills.wood.exp += caught.exp;
+        while (player.lifeSkills.wood.exp >= player.lifeSkills.wood.next) {
+            player.lifeSkills.wood.lvl++; 
+            player.lifeSkills.wood.exp -= player.lifeSkills.wood.next; 
+            player.lifeSkills.wood.next = Math.floor(player.lifeSkills.wood.next * 1.5);
+            log(`🪓 【生活職人】林場等級提升至 Lv.${player.lifeSkills.wood.lvl}！`, "var(--gold)");
+        }
+    }
+
     player.woodState.active = false;
     player.woodState.startTime = 0;
 

@@ -3,16 +3,32 @@
    ========================================================================== */
 
 function switchView(v) {
-    if (player.workStartTime && v === 'battle') return openModal("正在工作中", "妳還在居酒屋幫忙，不能翹班去打怪！", "我知道了");
+    // 如果在工作中切換視窗，會自動中斷工作
+    if (player.workStartTime && v === 'battle') {
+        return openModal("正在工作中", "妳還在居酒屋幫忙，確定要中途落荒而逃嗎？(將不會獲得任何工錢)", "繼續翹班", () => {
+            if (typeof stopWork === 'function') stopWork(true);
+            executeSwitchView(v);
+        }, true);
+    }
+
     if (isResting) return openModal("歇息中", "正在旅籠屋休息...", "等候");
 
+    // ✨ 新增：釣魚/伐木中切換視窗的確認（參考打工系統）
     if (player.fishingState && player.fishingState.active) {
-        return openModal("🎣 釣魚中", "妳正在全神貫注地垂釣，若要切換畫面，請先【收竿】！", "我知道了");
+        return openModal("確定離開？", "🎣 妳正在專注釣魚中，中途離開將會【取消收成】，確定要走嗎？", "確定離開", () => {
+            if (typeof stopFishing === 'function') stopFishing(true);
+            executeSwitchView(v);
+        }, true);
     }
-    
+
     if (player.woodState && player.woodState.active) {
-        return openModal("🪓 伐木中", "妳正在迷霧林場專注伐木，若要切換畫面，請先【收工】！", "我知道了");
+        return openModal("確定離開？", "🪓 妳正在專注伐木中，中途離開將會【中斷收成】，確定要走嗎？", "確定離開", () => {
+            if (typeof stopWoodchopping === 'function') stopWoodchopping(true);
+            executeSwitchView(v);
+        }, true);
     }
+
+
 
     if (monster.isBoss && v !== 'battle') {
         return openModal("⚠️ 戰況危急", "確定要落荒而逃嗎？<br>退回村莊後，首領將會恢復狀態，您必須重新挑戰！", "落荒而逃", () => {
@@ -54,9 +70,32 @@ function executeSwitchView(v) {
 }
 
 function backToVillage() {
-    if (player.workStartTime) return log("📢 老闆：工還沒做完想溜啊？點擊紅色的收工按鈕才能走！", "var(--danger)");
-    if (player.fishingState && player.fishingState.active) return showToast("🎣 正在釣魚中，請先【收竿】！", "var(--danger)");
-    if (player.woodState && player.woodState.active) return showToast("🪓 正在伐木中，請先【收工】！", "var(--danger)");
+    // 按下返回時，如果有進行中的釣魚，彈窗確認
+    if (player.fishingState && player.fishingState.active) {
+        return openModal("結束工作？", "🎣 確定要結束釣魚並返回村莊嗎？(本次漁獲將取消)", "確定收竿", () => {
+            if (typeof stopFishing === 'function') stopFishing(true);
+            let sv = el('sub-view'); if (sv) sv.classList.add('hidden');
+            let vm = el('village-menu'); if (vm) vm.classList.remove('hidden');
+        }, true);
+    }
+    // 按下返回時，如果有進行中的伐木，彈窗確認
+    if (player.woodState && player.woodState.active) {
+        return openModal("結束工作？", "🪓 確定要結束伐木並返回村莊嗎？(本次收穫將取消)", "確定收工", () => {
+            if (typeof stopWoodchopping === 'function') stopWoodchopping(true);
+            let sv = el('sub-view'); if (sv) sv.classList.add('hidden');
+            let vm = el('village-menu'); if (vm) vm.classList.remove('hidden');
+        }, true);
+    }
+
+    // 打工則在此處彈窗，因為打工通常是居酒屋內的行為
+    if (player.workStartTime) {
+        return openModal("確定收工？", "目前的工錢將不會發放喔！要就此結束幫忙嗎？", "確定收工", () => {
+            if (typeof stopWork === 'function') stopWork(true);
+            let sv = el('sub-view'); if (sv) sv.classList.add('hidden');
+            let vm = el('village-menu'); if (vm) vm.classList.remove('hidden');
+        }, true);
+    }
+
     let sv = el('sub-view'); if (sv) sv.classList.add('hidden');
     let vm = el('village-menu'); if (vm) vm.classList.remove('hidden');
 }
@@ -83,8 +122,8 @@ function showSubView(s) {
     else if (s === 'helper_shop') { renderIzakaya('helper'); }
     else if (s === 'work') { renderIzakayaWork(); }
     else if (s === 'casino') { renderCasino(); }
-    else if (s === 'smith') { 
-        renderSmithy(); 
+    else if (s === 'smith') {
+        renderSmithy();
         if (player.hasMetBlacksmith === false && typeof runSmithyIntro === 'function') runSmithyIntro();
     }
     else if (s === 'smith_shop') renderSmithyShop();
@@ -92,11 +131,12 @@ function showSubView(s) {
     else if (s === 'shrine') { renderShrine(); }
     else if (s === 'shrine_shop') { renderShrineShop(); }
     else if (s === 'sect') { renderSect(); }
-    else if (s === 'teahouse') { 
+    else if (s === 'teahouse') {
         // 當村莊引導結束後，手動進來的才算真正見過茶屋
         if (player.hasSeenVillageIntro) { player.hasSeenTeahouse = true; saveGame(false); }
-        renderTeahouse(); 
+        renderTeahouse();
     }
+    else if (s === 'rumor') { renderRumorBoard(); }
     else if (s === 'expedition') { renderExpedition(); }
     else if (s === 'cook') { renderCook(); }
     else if (s === 'lifeSkills') { renderLifeSkills(); }
@@ -963,8 +1003,8 @@ function renderTeahouse() {
         <p style="color:#aaa; font-style:italic; margin-bottom:20px;">老闆娘 瑩：「遠道而來的旅人，辛苦了。外面風沙大、霧氣也重...快進來歇歇腳，喝杯熱茶暖暖身子吧。」</p>
         
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
-            <div class="slot-card" style="width:auto; margin:0; border-color:var(--quest);" onclick="showToast('目前沒有新的委託傳聞喔。', 'var(--quest)')">
-                <h3 style="color:var(--quest); margin:5px 0;">📜 傳聞揭示板</h3><p style="margin:0; font-size:0.8em; color:#aaa;">村莊委託與情報</p>
+            <div class="slot-card" style="width:auto; margin:0; border-color:var(--quest);" onclick="showSubView('rumor')">
+                <h3 style="color:var(--quest); margin:5px 0;">📜 傳聞揭示板</h3><p style="margin:0; font-size:0.8em; color:#aaa;">接取任務與推進劇情</p>
             </div>
             <div class="slot-card" style="width:auto; margin:0; border-color:var(--accent);" onclick="showToast('玩家互動目前尚未開放', 'var(--danger)')">
                 <h3 style="color:var(--accent); margin:5px 0;">👥 玩家互動</h3><p style="margin:0; font-size:0.8em; color:#aaa;">交流情報與傳聞</p>
@@ -975,6 +1015,138 @@ function renderTeahouse() {
         </div>
         
         <button class="btn-action" style="width:100%; background:#444; color:white;" onclick="backToVillage()">← 離開茶屋</button>`;
+}
+
+// ✨ 新增：渲染傳聞揭示板
+function renderRumorBoard() {
+    const c = el('sub-content'); if (!c) return;
+
+    // ✨ 功能設計中：暫時屏蔽功能
+    c.innerHTML = `
+        <h3 style="display:flex; align-items:center; gap:10px;">📜 傳聞揭示板 <span style="font-size:0.6em; background:var(--danger); color:white; padding:2px 8px; border-radius:4px;">DEVELOPING</span></h3>
+        <div style="position:relative; min-height:350px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(135deg, rgba(20,20,25,0.95) 0%, rgba(5,5,10,0.98) 100%); border:1px solid rgba(255,215,0,0.3); border-radius:15px; padding:40px; margin-top:10px; box-shadow: inset 0 0 50px rgba(0,0,0,0.8), 0 10px 30px rgba(0,0,0,0.5); overflow:hidden;">
+            <!-- 裝飾背景文字 -->
+            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:8em; font-weight:bold; color:rgba(255,215,0,0.03); white-space:nowrap; pointer-events:none; user-select:none;">COMING SOON</div>
+            
+            <div style="font-size:4.5em; margin-bottom:20px; filter: drop-shadow(0 0 15px rgba(255,215,0,0.4)); animation: float 3s ease-in-out infinite;">🚧</div>
+            <h2 style="color:var(--gold); font-size:2em; margin:0 0 15px 0; text-shadow: 0 0 20px rgba(255,215,0,0.5); letter-spacing: 2px;">功能設計中</h2>
+            <div style="width:50px; height:2px; background:var(--gold); margin-bottom:20px; opacity:0.5;"></div>
+            <p style="color:#bbb; text-align:center; line-height:1.8; font-size:1.1em; max-width:300px;">
+                茶屋的揭示板正在彙整各地的傳聞與委託...<br>
+                目前裝修工作中，尚未對外開放。<br>
+                <span style="color:var(--quest); font-size:0.9em;">請耐心期待村莊後續的更新消息。</span>
+            </p>
+            
+           
+            
+            <style>
+                @keyframes float {
+                    0% { transform: translateY(0px); }
+                    50% { transform: translateY(-10px); }
+                    100% { transform: translateY(0px); }
+                }
+            </style>
+        </div>
+        <button class="btn-action" style="width:100%; margin-top:25px; background:linear-gradient(180deg, #444, #222); color:white; border:1px solid #555; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;" onclick="showSubView('teahouse')">← 返回茶屋分流</button>
+    `;
+
+    /* 
+    // --- 原有傳聞揭示板邏輯 (暫時保留供開發參考) ---
+    // ✨ 防呆保護：如果資料庫未載入，顯示錯誤訊息而不是直接當機變白畫面
+    if (typeof RUMOR_DB === 'undefined') {
+        c.innerHTML = `<h3>📜 傳聞揭示板</h3><div style="color:var(--danger); padding:20px; text-align:center;">⚠️ 系統錯誤：無法讀取傳聞資料庫 (RUMOR_DB)。</div><button class="btn-action" style="width:100%; margin-top:20px; background:#444; color:white;" onclick="showSubView('teahouse')">← 返回茶屋</button>`;
+        return;
+    }
+
+    let html = `<h3>📜 傳聞揭示板</h3>
+        <p style="color:#aaa; font-size:0.9em; margin-bottom:15px;">這裡是村民與旅人交流情報、發布委託的地方。解決這些麻煩，推進妳的冒險旅程吧。</p>
+        <div style="display:flex; flex-direction:column; gap:12px;">`;
+
+    let visibleRumors = 0;
+    for (let id in RUMOR_DB) {
+        let r = RUMOR_DB[id];
+        if (r.reqStory && (!player.completedStories || !player.completedStories.includes(r.reqStory))) continue;
+        if (player.lvl < r.reqLvl) continue; 
+        let isDone = player.completedStories && player.completedStories.includes(id);
+        if (isDone && !r.isRepeatable) continue;
+        visibleRumors++;
+        let btnColor = r.type === 'main' ? 'var(--cherry)' : (r.type === 'hunt' ? 'var(--danger)' : (r.type === 'info' ? 'var(--accent)' : 'var(--quest)'));
+        let typeTag = "";
+        if (r.type === 'main') typeTag = `<span style="background:var(--cherry); color:white; padding:2px 6px; border-radius:4px; font-size:0.7em; margin-right:8px; font-weight:bold;">📜 主線</span>`;
+        else if (r.type === 'hunt') typeTag = `<span style="background:var(--danger); color:white; padding:2px 6px; border-radius:4px; font-size:0.7em; margin-right:8px; font-weight:bold;">⚔️ 懸賞</span>`;
+        else if (r.type === 'info') typeTag = `<span style="background:var(--accent); color:black; padding:2px 6px; border-radius:4px; font-size:0.7em; margin-right:8px; font-weight:bold;">💬 情報</span>`;
+        else typeTag = `<span style="background:var(--quest); color:black; padding:2px 6px; border-radius:4px; font-size:0.7em; margin-right:8px; font-weight:bold;">📦 委託</span>`;
+        let repeatTag = r.isRepeatable ? `<span style="background:#27ae60; color:white; padding:2px 6px; border-radius:4px; font-size:0.7em; margin-right:8px; font-weight:bold;">🔁 日常</span>` : "";
+
+        html += `
+            <div style="background:linear-gradient(90deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%); border-left:4px solid ${btnColor}; border-radius:8px; padding:15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); position:relative; border-top:1px solid rgba(255,255,255,0.05); border-right:1px solid rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.05);">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed rgba(255,255,255,0.1); padding-bottom:8px; margin-bottom:8px;">
+                    <h4 style="margin:0; font-size:1.05em; color:${btnColor}; display:flex; align-items:center;">${typeTag}${repeatTag}${r.title}</h4>
+                    <span style="font-size:0.75em; color:#888;">Lv.${r.reqLvl} 建議</span>
+                </div>
+                <p style="font-size:0.9em; color:#ccc; margin:0 0 12px 0; line-height:1.5;">${r.desc}</p>
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.3); padding:8px 10px; border-radius:6px;">
+                    <div style="font-size:0.85em; color:#aaa;"><b style="color:var(--gold);">🎁 報酬：</b><span style="color:white;">${r.rewardText}</span></div>
+                    <button class="btn-action" style="background:${btnColor}; color:${r.type === 'main' ? 'white' : 'black'}; padding:6px 15px; font-size:0.9em; border-radius:5px; font-weight:bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5);" onclick="executeRumor('${id}')">${r.actionText}</button>
+                </div>
+            </div>`;
+    }
+    if (visibleRumors === 0) {
+        html += `<div style="text-align:center; color:#666; padding:30px;">目前沒有新的傳聞或委託。<br><span style="font-size:0.85em;">(去荒野多升級或推進其他劇情看看吧)</span></div>`;
+    }
+    html += `</div><button class="btn-action" style="width:100%; margin-top:20px; background:#444; color:white;" onclick="showSubView('teahouse')">← 返回茶屋</button>`;
+    c.innerHTML = html;
+    */
+}
+
+// ✨ 新增：執行與交付任務邏輯
+function executeRumor(id) {
+    if (typeof RUMOR_DB === 'undefined') return;
+    let r = RUMOR_DB[id];
+    if (!r) return;
+
+    // 1. 檢查並扣除需求道具 (reqItems)
+    if (r.reqItems) {
+        for (let k in r.reqItems) {
+            let isPot = typeof getItem === 'function' && getItem(k).cat === 'rec';
+            let own = isPot ? (player.potions[k] || 0) : (player.mats[k] || 0);
+            if (own < r.reqItems[k]) {
+                let itemName = typeof getItem === 'function' ? getItem(k).name : k;
+                return showToast(`❌ ${itemName} 數量不足 (需 ${r.reqItems[k]} 個)`, 'var(--danger)');
+            }
+        }
+        // 確認足夠後才正式扣除
+        for (let k in r.reqItems) {
+            let isPot = typeof getItem === 'function' && getItem(k).cat === 'rec';
+            if (isPot) player.potions[k] -= r.reqItems[k];
+            else player.mats[k] -= r.reqItems[k];
+        }
+    }
+
+    // 2. 發放獎勵 (rewards)
+    if (r.rewards) {
+        if (r.rewards.gold) player.gold += r.rewards.gold;
+        if (r.rewards.exp) { player.exp += r.rewards.exp; if (typeof checkLevelUp === 'function') checkLevelUp(); }
+        if (r.rewards.items) {
+            for (let k in r.rewards.items) {
+                if (typeof addItemToBag === 'function') addItemToBag(k, r.rewards.items[k]);
+            }
+        }
+        showToast('委託完成！獲得豐厚獎勵', 'var(--quest)');
+    }
+
+    // 3. 標記完成
+    markStoryDone(id);
+    if (r.onCompleteFlag) markStoryDone(r.onCompleteFlag); // 額外的劇情旗標
+
+    // 4. 顯示劇情對話或單純更新 UI
+    if (r.dialog) {
+        openModal(r.dialog.title, r.dialog.text, '了解', () => {
+            updateUI(); renderRumorBoard();
+        });
+    } else {
+        updateUI(); renderRumorBoard();
+    }
 }
 
 let expRefreshTimer = null;
@@ -1724,12 +1896,12 @@ function getToolDuraText(toolId) {
     let cur = player.toolDura && player.toolDura[toolId] !== undefined ? player.toolDura[toolId] : max;
     let pct = cur / max;
     let color = pct > 0.5 ? 'lime' : (pct > 0.2 ? 'var(--gold)' : 'var(--danger)');
-    return `備用: ${count-1} 把 | 當前耐久: <span style="color:${color}; font-weight:bold;">${cur}/${max}</span>`;
+    return `備用: ${count - 1} 把 | 當前耐久: <span style="color:${color}; font-weight:bold;">${cur}/${max}</span>`;
 }
 
 function renderLifeSkills() {
     const c = el('sub-content'); if (!c) return;
-    
+
     if (typeof checkStaminaRegen === 'function') checkStaminaRegen();
 
     let fLvl = player.lifeSkills?.farm?.lvl || 1;
@@ -1777,7 +1949,7 @@ function renderFarm() {
     let waterCd = 30 * 60 * 1000;
     let waterElapsed = player.lastWaterTime ? (now - player.lastWaterTime) : waterCd;
     let waterCdLeft = Math.max(0, waterCd - waterElapsed);
-    let waterBtnText = waterCdLeft > 0 ? `💦 冷卻中 (${Math.ceil(waterCdLeft/60000)}分)` : "💦 全區澆水 (-1% 時間)";
+    let waterBtnText = waterCdLeft > 0 ? `💦 冷卻中 (${Math.ceil(waterCdLeft / 60000)}分)` : "💦 全區澆水 (-1% 時間)";
     let waterBtnColor = waterCdLeft > 0 ? "#444" : "var(--quest)";
     let waterBtnFont = waterCdLeft > 0 ? "#888" : "black";
 
@@ -1795,13 +1967,13 @@ function renderFarm() {
             if (!crop) {
                 plotsHtml += `
                     <div style="background:rgba(255,255,255,0.05); border:1px solid #555; border-radius:8px; padding:12px; text-align:center;">
-                        <p style="color:#aaa; font-size:0.85em; margin:0 0 10px 0;">空置田地 ${i+1}</p>
+                        <p style="color:#aaa; font-size:0.85em; margin:0 0 10px 0;">空置田地 ${i + 1}</p>
                         ${hasHoe ? `<button class="btn-action" style="width:100%; background:var(--quest); color:black; font-size:0.9em;" onclick="promptPlantSeed(${i})">🌱 播種</button>` : `<button class="btn-action" style="width:100%; background:#444; color:#888; font-size:0.85em;" onclick="showToast('請先購買【粗製鋤頭】', 'var(--danger)')">缺少農具</button>`}
                     </div>`;
             } else {
                 let seedItem = typeof getItem === 'function' ? getItem(crop.seedId) : { name: "未知作物" };
                 let timeLeft = crop.endTime - now;
-                
+
                 if (timeLeft <= 0) {
                     plotsHtml += `
                         <div style="background:rgba(85,239,196,0.1); border:1px solid var(--quest); border-radius:8px; padding:12px; text-align:center;">
@@ -1838,7 +2010,7 @@ function renderFish() {
     const c = el('sub-content'); if (!c) return;
     let hasRod = (player.mats['tool_rod_1'] || 0) > 0;
     let fLvl = player.lifeSkills?.fish?.lvl || 1;
-    
+
     let contentHtml = "";
     if (!player.fishingState || !player.fishingState.active) {
         let rodBtn = hasRod ? `<button class="btn-action" style="width:100%; background:var(--accent); color:black; font-size:1.05em; padding:12px;" onclick="startFishing()">🎣 拋竿靜候 (開始掛機)</button>` : `<button class="btn-action" style="width:100%; background:#444; color:#888; font-size:1.05em; padding:12px;" onclick="showToast('請先至萬屋購買【簡易釣竿】', 'var(--danger)')">🎣 缺少釣具</button>`;
@@ -1848,7 +2020,7 @@ function renderFish() {
                 <span style="font-size:2.5em; display:block; margin-bottom:10px;">🌊</span><span style="color:#888;">水面平靜無波...</span>
             </div>${rodBtn}`;
     } else {
-        let timeStr = formatHelperTime(Math.floor((Date.now() - player.fishingState.startTime)/1000));
+        let timeStr = formatHelperTime(Math.floor((Date.now() - player.fishingState.startTime) / 1000));
         let caught = player.fishingState.caught || { m1: 0, m2: 0, m3: 0 };
         let catchLogHtml = ``;
         if (caught.m1 || caught.m2 || caught.m3) {
@@ -1880,7 +2052,10 @@ function renderFish() {
 
 function checkLeaveFish() {
     if (player.fishingState && player.fishingState.active) {
-        showToast("🎣 正在釣魚中，請先【收竿結算】才能離開！", "var(--danger)");
+        return openModal("結束工作？", "🎣 確定要停止釣魚並返回生活領地嗎？", "確定停止", () => {
+            if (typeof stopFishing === 'function') stopFishing(true);
+            showSubView('lifeSkills');
+        }, true);
     } else {
         showSubView('lifeSkills');
     }
@@ -1889,16 +2064,16 @@ function checkLeaveFish() {
 function renderWood() {
     const c = el('sub-content'); if (!c) return;
     if (typeof checkStaminaRegen === 'function') checkStaminaRegen();
-    
+
     let hasAxe = (player.mats['tool_axe_1'] || 0) > 0;
     let wLvl = player.lifeSkills?.wood?.lvl || 1;
-    
+
     let contentHtml = "";
     if (!player.woodState || !player.woodState.active) {
-        let axeBtn = hasAxe 
-            ? `<button class="btn-action" style="width:100%; background:var(--mat); color:black; font-size:1.1em; padding:12px; margin-top:5px;" onclick="startWoodchopping()">🪓 進入林場 (開始掛機)</button>` 
+        let axeBtn = hasAxe
+            ? `<button class="btn-action" style="width:100%; background:var(--mat); color:black; font-size:1.1em; padding:12px; margin-top:5px;" onclick="startWoodchopping()">🪓 進入林場 (開始掛機)</button>`
             : `<button class="btn-action" style="width:100%; background:#444; color:#888; font-size:1.1em; padding:12px; margin-top:5px;" onclick="showToast('請先至萬屋購買【生鏽鐵斧】', 'var(--danger)')">🪓 缺少斧具</button>`;
-            
+
         let unlockText = "朽木 (Lv.1)";
         if (wLvl >= 3) unlockText += "、堅韌原木 (Lv.3)";
         if (wLvl >= 5) unlockText += "、靈氣神木 (Lv.5)";
@@ -1913,7 +2088,7 @@ function renderWood() {
                 ${axeBtn}
             </div>`;
     } else {
-        let timeStr = formatHelperTime(Math.floor((Date.now() - player.woodState.startTime)/1000));
+        let timeStr = formatHelperTime(Math.floor((Date.now() - player.woodState.startTime) / 1000));
         let caught = player.woodState.caught || { m1: 0, m2: 0, m3: 0, stam: 0 };
         let catchLogHtml = "";
         if (caught.m1 || caught.m2 || caught.m3) {
@@ -1940,7 +2115,10 @@ function renderWood() {
 
 function checkLeaveWood() {
     if (player.woodState && player.woodState.active) {
-        showToast("🪓 正在伐木中，請先【收工結算】才能離開！", "var(--danger)");
+        return openModal("結束工作？", "🪓 確定要停止伐木並返回生活領地嗎？", "確定停止", () => {
+            if (typeof stopWoodchopping === 'function') stopWoodchopping(true);
+            showSubView('lifeSkills');
+        }, true);
     } else {
         showSubView('lifeSkills');
     }
@@ -1950,7 +2128,7 @@ function waterCrop() {
     let now = Date.now();
     if (player.lastWaterTime && now - player.lastWaterTime < 30 * 60 * 1000) return;
     player.lastWaterTime = now;
-    
+
     let watered = false;
     if (player.farmCrops) {
         player.farmCrops.forEach(crop => {
@@ -1961,7 +2139,7 @@ function waterCrop() {
             }
         });
     }
-    
+
     if (watered) {
         if (typeof showToast === 'function') showToast("💦 全區澆水完成！生長時間微幅減少", "var(--quest)");
     } else {
@@ -1973,15 +2151,15 @@ function waterCrop() {
 
 function promptPlantSeed(slotIdx) {
     let seedOpts = ""; let hasSeeds = false;
-    for(let k in player.mats) {
-        if(player.mats[k] > 0 && typeof getItem === 'function') {
+    for (let k in player.mats) {
+        if (player.mats[k] > 0 && typeof getItem === 'function') {
             let item = getItem(k);
-            if(item.cat === 'seed') {
+            if (item.cat === 'seed') {
                 hasSeeds = true;
                 seedOpts += `<div style="display:flex; justify-content:space-between; align-items:center; background:#111; padding:10px; margin-bottom:5px; border:1px solid #333; border-radius:5px;"><div><b style="color:var(--quest)">${item.name}</b> (持有: ${player.mats[k]})<br><span style="font-size:0.8em; color:#aaa;">生長時間: ${item.growTime} 分鐘</span></div><button class="btn-action" style="background:var(--quest); color:black;" onclick="plantSeed('${k}', ${slotIdx}); el('game-modal').style.display='none';">播下種子</button></div>`;
             }
         }
     }
-    if(!hasSeeds) seedOpts = "<div style='color:#888; text-align:center; padding:20px;'>行囊中沒有任何種子。<br>請前往萬屋或透過探索取得。</div>";
+    if (!hasSeeds) seedOpts = "<div style='color:#888; text-align:center; padding:20px;'>行囊中沒有任何種子。<br>請前往萬屋或透過探索取得。</div>";
     openModal("🌱 選擇種子", `<div style="max-height:250px; overflow-y:auto; text-align:left;">${seedOpts}</div>`, "關閉");
 }
